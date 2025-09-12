@@ -65,6 +65,90 @@ export async function registerTasksAPI(app: Express) {
     }
   });
 
+  // Get task statistics (without userId - for dashboard)
+  app.get('/api/tasks/stats', async (req, res) => {
+    try {
+      const { userId } = req.query as { userId?: string };
+      const filters = userId ? { assigneeId: userId } : {};
+      
+      const allTasks = await storage.getTasks(filters);
+      const now = new Date();
+      const today = now.toDateString();
+      const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+      
+      const todayTasks = allTasks.filter(task => 
+        task.dueAt && new Date(task.dueAt).toDateString() === today
+      );
+      
+      const overdueTasks = allTasks.filter(task => 
+        task.status !== 'DONE' && task.dueAt && new Date(task.dueAt) < now
+      );
+      
+      const completedTasks = allTasks.filter(task => 
+        task.status === 'DONE' && task.updatedAt && new Date(task.updatedAt) > yesterday
+      );
+      
+      const blockedTasks = allTasks.filter(task => task.status === 'BLOCKED');
+      
+      const slaBreaches = allTasks.filter(task => 
+        task.status !== 'DONE' && task.slaAt && new Date(task.slaAt) < now
+      );
+      
+      res.json({
+        todayStats: { total: todayTasks.length },
+        overdueStats: { total: overdueTasks.length },
+        completedStats: { total: completedTasks.length },
+        blockedStats: { total: blockedTasks.length },
+        slaBreachStats: { total: slaBreaches.length }
+      });
+    } catch (error) {
+      console.error('Error fetching task stats:', error);
+      res.status(500).json({ error: 'Failed to fetch task statistics' });
+    }
+  });
+
+  // Get task statistics for specific user
+  app.get('/api/tasks/stats/:userId', async (req, res) => {
+    try {
+      const { userId } = req.params as { userId: string };
+      const filters = { assigneeId: userId };
+      
+      const allTasks = await storage.getTasks(filters);
+      const now = new Date();
+      const today = now.toDateString();
+      const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+      
+      const todayTasks = allTasks.filter(task => 
+        task.dueAt && new Date(task.dueAt).toDateString() === today
+      );
+      
+      const overdueTasks = allTasks.filter(task => 
+        task.status !== 'DONE' && task.dueAt && new Date(task.dueAt) < now
+      );
+      
+      const completedTasks = allTasks.filter(task => 
+        task.status === 'DONE' && task.updatedAt && new Date(task.updatedAt) > yesterday
+      );
+      
+      const blockedTasks = allTasks.filter(task => task.status === 'BLOCKED');
+      
+      const slaBreaches = allTasks.filter(task => 
+        task.status !== 'DONE' && task.slaAt && new Date(task.slaAt) < now
+      );
+      
+      res.json({
+        todayStats: { total: todayTasks.length },
+        overdueStats: { total: overdueTasks.length },
+        completedStats: { total: completedTasks.length },
+        blockedStats: { total: blockedTasks.length },
+        slaBreachStats: { total: slaBreaches.length }
+      });
+    } catch (error) {
+      console.error('Error fetching task stats:', error);
+      res.status(500).json({ error: 'Failed to fetch task statistics' });
+    }
+  });
+
   // Get single task
   app.get('/api/tasks/:id', async (req, res) => {
     try {
@@ -205,45 +289,4 @@ export async function registerTasksAPI(app: Express) {
     }
   });
 
-  // Get task statistics
-  app.get('/api/tasks/stats/:userId?', async (req, res) => {
-    try {
-      const { userId } = req.params as { userId?: string };
-      const filters = userId ? { assigneeId: userId } : {};
-      
-      const allTasks = await storage.getTasks(filters);
-      const now = new Date();
-      const today = now.toDateString();
-      const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-      
-      const todayTasks = allTasks.filter(task => 
-        task.dueAt && new Date(task.dueAt).toDateString() === today
-      );
-      
-      const overdueTasks = allTasks.filter(task => 
-        task.status !== 'DONE' && task.dueAt && new Date(task.dueAt) < now
-      );
-      
-      const completedTasks = allTasks.filter(task => 
-        task.status === 'DONE' && task.updatedAt && new Date(task.updatedAt) > yesterday
-      );
-      
-      const blockedTasks = allTasks.filter(task => task.status === 'BLOCKED');
-      
-      const slaBreaches = allTasks.filter(task => 
-        task.status !== 'DONE' && task.slaAt && new Date(task.slaAt) < now
-      );
-      
-      res.json({
-        todayStats: { total: todayTasks.length },
-        overdueStats: { total: overdueTasks.length },
-        completedStats: { total: completedTasks.length },
-        blockedStats: { total: blockedTasks.length },
-        slaBreachStats: { total: slaBreaches.length }
-      });
-    } catch (error) {
-      console.error('Error fetching task stats:', error);
-      res.status(500).json({ error: 'Failed to fetch task statistics' });
-    }
-  });
 }
