@@ -8,6 +8,7 @@ import Tasks from "@/pages/tasks";
 import Projects from "@/pages/projects";
 import Playbooks from "@/pages/playbooks";
 import Analytics from "@/pages/analytics";
+import Kanban from "@/pages/kanban";
 import NotFound from "@/pages/not-found";
 import { WebSocketProvider } from "@/hooks/use-websocket";
 
@@ -18,6 +19,7 @@ function Router() {
       <Route path="/dashboard" component={Dashboard} />
       <Route path="/tasks" component={Tasks} />
       <Route path="/projects" component={Projects} />
+      <Route path="/kanban" component={Kanban} />
       <Route path="/playbooks" component={Playbooks} />
       <Route path="/analytics" component={Analytics} />
       <Route component={NotFound} />

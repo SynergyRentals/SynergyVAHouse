@@ -15,7 +15,8 @@ import {
   ListTodo,
   FolderKanban,
   BookOpen,
-  BarChart3
+  BarChart3,
+  KanbanSquare
 } from "lucide-react";
 import { SLAMonitor } from "@/components/sla-monitor";
 import { TeamStatus } from "@/components/team-status";
@@ -147,6 +148,12 @@ export default function Dashboard() {
               <a className="flex items-center space-x-3 px-3 py-2 rounded-lg text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors">
                 <FolderKanban className="w-5 h-5" />
                 <span>Projects</span>
+              </a>
+            </Link>
+            <Link href="/kanban">
+              <a className="flex items-center space-x-3 px-3 py-2 rounded-lg text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors">
+                <KanbanSquare className="w-5 h-5" />
+                <span>Kanban</span>
               </a>
             </Link>
             <Link href="/playbooks">
