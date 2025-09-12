@@ -188,6 +188,15 @@ export async function registerProjectsAPI(app: Express) {
         action: 'created',
         data: { task, projectId: id }
       });
+
+      // Start SLA timer if playbook exists
+      if (task.playbookKey) {
+        const playbook = await storage.getPlaybook(task.playbookKey);
+        if (playbook) {
+          const { startSLATimer } = await import('../services/sla');
+          await startSLATimer(task.id, playbook);
+        }
+      }
       
       res.json(task);
     } catch (error) {
