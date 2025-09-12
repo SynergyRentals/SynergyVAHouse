@@ -1,12 +1,11 @@
 import { storage } from '../storage';
 
-export function mapConduitEventToTask(payload: any): any | null {
+export async function mapConduitEventToTask(payload: any): Promise<any | null> {
   try {
     // Map Conduit event to our task structure
     const event = payload;
     let category = 'general';
     let title = 'Task from Conduit';
-    let assigneeId = null;
     
     // Infer category from event type and content
     if (event.type === 'escalation.created') {
@@ -23,16 +22,22 @@ export function mapConduitEventToTask(payload: any): any | null {
         category = 'access.smart_lock_issue';
         title = `Smart lock issue - ${event.escalation.property_name}`;
       }
+    } else if (event.type === 'task.created') {
+      category = event.task?.category || 'general';
+      title = event.task?.title || `Task from Conduit - ${event.task?.id}`;
+    } else if (event.type === 'ai.help_requested') {
+      category = 'general';
+      title = `AI Help Request - ${event.request?.subject || 'General assistance'}`;
     }
     
     // Assign based on category
-    assigneeId = guessAssigneeFromCategory(category);
+    const assigneeId = await guessAssigneeFromCategory(category);
     
     return {
       title,
       category,
       assigneeId,
-      priority: event.escalation?.priority === 'high' ? 1 : 3,
+      priority: event.escalation?.priority === 'high' || event.task?.priority === 'high' ? 1 : 3,
       playbookKey: category
     };
   } catch (error) {
@@ -41,7 +46,7 @@ export function mapConduitEventToTask(payload: any): any | null {
   }
 }
 
-export function mapSuiteOpEventToTask(payload: any): any | null {
+export async function mapSuiteOpEventToTask(payload: any): Promise<any | null> {
   try {
     const task = payload.task || payload;
     let category = 'maintenance.issue';
@@ -50,22 +55,25 @@ export function mapSuiteOpEventToTask(payload: any): any | null {
     // Map SuiteOp task types to our categories
     if (task.type === 'cleaning') {
       category = 'cleaning.issue';
-      title = `Cleaning issue - ${task.property_name}`;
+      title = `Cleaning issue - ${task.property_name || task.location}`;
     } else if (task.type === 'maintenance') {
       category = 'maintenance.issue';
-      title = `Maintenance issue - ${task.property_name}`;
+      title = `Maintenance issue - ${task.property_name || task.location}`;
     } else if (task.type === 'inventory') {
       category = 'inventory.restock';
-      title = `Inventory restock - ${task.property_name}`;
+      title = `Inventory restock - ${task.property_name || task.location}`;
+    } else if (task.type === 'wifi') {
+      category = 'internet.wifi_issue';
+      title = `WiFi issue - ${task.property_name || task.location}`;
     }
     
-    const assigneeId = guessAssigneeFromCategory(category);
+    const assigneeId = await guessAssigneeFromCategory(category);
     
     return {
       title,
       category,
       assigneeId,
-      priority: task.priority === 'urgent' ? 1 : 3,
+      priority: task.priority === 'urgent' || task.priority === 'high' ? 1 : 3,
       playbookKey: category
     };
   } catch (error) {
@@ -74,7 +82,7 @@ export function mapSuiteOpEventToTask(payload: any): any | null {
   }
 }
 
-export function guessAssigneeFromCategory(category: string): string | null {
+export async function guessAssigneeFromCategory(category: string): Promise<string | null> {
   // Simple assignee inference based on category
   // In a real system, this would be more sophisticated
   
@@ -96,9 +104,15 @@ export function guessAssigneeFromCategory(category: string): string | null {
     return null;
   }
   
-  // For now, just return the first assignee
-  // In production, this would consider workload, availability, etc.
-  return potentialAssignees[0];
+  // Get the first assignee's user ID from Slack ID
+  const assigneeSlackId = potentialAssignees[0];
+  try {
+    const user = await storage.getUserBySlackId(assigneeSlackId);
+    return user?.id || null;
+  } catch (error) {
+    console.error(`Error getting user ID for ${assigneeSlackId}:`, error);
+    return null;
+  }
 }
 
 export async function inferAssigneeFromMessage(messageText: string, channelId: string): Promise<string | null> {

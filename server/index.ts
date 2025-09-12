@@ -8,10 +8,27 @@ import { log, setupVite } from './vite';
 
 const app = express();
 
-// Register middleware
-app.use('/webhooks', bodyParser.raw({ type: 'application/json' })); // Only for webhooks
-app.use(express.json()); // For API endpoints
-app.use(express.urlencoded({ extended: true }));
+// Register middleware in the correct order
+// Raw body parsing ONLY for webhooks, JSON parsing for everything else
+app.use('/webhooks', bodyParser.raw({ 
+  type: 'application/json',
+  limit: '10mb'
+}));
+
+// JSON and URL-encoded parsing for non-webhook routes
+app.use((req, res, next) => {
+  if (req.path.startsWith('/webhooks')) {
+    return next(); // Skip JSON parsing for webhooks
+  }
+  express.json()(req, res, next);
+});
+
+app.use((req, res, next) => {
+  if (req.path.startsWith('/webhooks')) {
+    return next(); // Skip URL-encoded parsing for webhooks
+  }
+  express.urlencoded({ extended: true })(req, res, next);
+});
 
 // Custom logging middleware
 app.use((req, res, next) => {

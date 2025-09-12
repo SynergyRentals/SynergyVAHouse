@@ -7,6 +7,10 @@ import crypto from 'crypto';
 export async function setupSuiteOpWebhooks(app: Express) {
   app.post('/webhooks/suiteop', async (req, res) => {
     try {
+      // Parse raw body for HMAC verification
+      const rawBody = req.body as Buffer;
+      const bodyString = rawBody.toString('utf8');
+      
       // Verify HMAC signature
       const signature = req.headers['x-suiteop-signature'] as string;
       const secret = process.env.WEBHOOK_SUITEOP_SECRET;
@@ -14,17 +18,33 @@ export async function setupSuiteOpWebhooks(app: Express) {
       if (secret && signature) {
         const expectedSignature = crypto
           .createHmac('sha256', secret)
-          .update(JSON.stringify(req.body))
+          .update(bodyString)
           .digest('hex');
         
-        if (signature !== `sha256=${expectedSignature}`) {
+        const providedSignature = signature.startsWith('sha256=') ? signature.slice(7) : signature;
+        
+        if (providedSignature !== expectedSignature) {
+          console.error('HMAC verification failed for SuiteOp webhook');
           res.status(401).json({ error: 'Invalid signature' });
           return;
         }
+        
+        console.log('SuiteOp webhook HMAC verified successfully');
+      } else if (secret) {
+        console.warn('SuiteOp webhook received without signature, but secret is configured');
       }
       
-      const payload = req.body as any;
-      console.log('SuiteOp webhook received:', payload.type);
+      // Parse JSON payload
+      let payload: any;
+      try {
+        payload = JSON.parse(bodyString);
+      } catch (error) {
+        console.error('Invalid JSON in SuiteOp webhook:', error);
+        res.status(400).json({ error: 'Invalid JSON payload' });
+        return;
+      }
+      
+      console.log('SuiteOp webhook received:', payload.type, 'ID:', payload.id || payload.task?.id);
       
       // Map event to task based on type
       switch (payload.type) {
@@ -41,6 +61,23 @@ export async function setupSuiteOpWebhooks(app: Express) {
       res.json({ status: 'processed' });
     } catch (error) {
       console.error('Error processing SuiteOp webhook:', error);
+      
+      // Create audit entry for failed webhook
+      try {
+        await storage.createAudit({
+          entity: 'webhook',
+          entityId: 'suiteop',
+          action: 'processing_failed',
+          data: { 
+            error: error instanceof Error ? error.message : 'Unknown error',
+            headers: req.headers,
+            url: req.url
+          }
+        });
+      } catch (auditError) {
+        console.error('Failed to create audit entry for webhook error:', auditError);
+      }
+      
       res.status(500).json({ error: 'Processing failed' });
     }
   });
@@ -48,7 +85,7 @@ export async function setupSuiteOpWebhooks(app: Express) {
 
 async function handleTaskCreated(payload: any) {
   try {
-    const taskData = mapSuiteOpEventToTask(payload);
+    const taskData = await mapSuiteOpEventToTask(payload);
     
     if (!taskData) {
       console.log('Could not map SuiteOp task to our task');

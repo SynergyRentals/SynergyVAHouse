@@ -7,6 +7,10 @@ import crypto from 'crypto';
 export async function setupConduitWebhooks(app: Express) {
   app.post('/webhooks/conduit', async (req, res) => {
     try {
+      // Parse raw body for HMAC verification
+      const rawBody = req.body as Buffer;
+      const bodyString = rawBody.toString('utf8');
+      
       // Verify HMAC signature
       const signature = req.headers['x-conduit-signature'] as string;
       const secret = process.env.WEBHOOK_CONDUIT_SECRET;
@@ -14,17 +18,33 @@ export async function setupConduitWebhooks(app: Express) {
       if (secret && signature) {
         const expectedSignature = crypto
           .createHmac('sha256', secret)
-          .update(JSON.stringify(req.body))
+          .update(bodyString)
           .digest('hex');
         
-        if (signature !== `sha256=${expectedSignature}`) {
+        const providedSignature = signature.startsWith('sha256=') ? signature.slice(7) : signature;
+        
+        if (providedSignature !== expectedSignature) {
+          console.error('HMAC verification failed for Conduit webhook');
           res.status(401).json({ error: 'Invalid signature' });
           return;
         }
+        
+        console.log('Conduit webhook HMAC verified successfully');
+      } else if (secret) {
+        console.warn('Conduit webhook received without signature, but secret is configured');
       }
       
-      const payload = req.body as any;
-      console.log('Conduit webhook received:', payload.type);
+      // Parse JSON payload
+      let payload: any;
+      try {
+        payload = JSON.parse(bodyString);
+      } catch (error) {
+        console.error('Invalid JSON in Conduit webhook:', error);
+        res.status(400).json({ error: 'Invalid JSON payload' });
+        return;
+      }
+      
+      console.log('Conduit webhook received:', payload.type, 'ID:', payload.id || payload.escalation?.id);
       
       // Map event to task based on type
       switch (payload.type) {
@@ -47,6 +67,23 @@ export async function setupConduitWebhooks(app: Express) {
       res.json({ status: 'processed' });
     } catch (error) {
       console.error('Error processing Conduit webhook:', error);
+      
+      // Create audit entry for failed webhook
+      try {
+        await storage.createAudit({
+          entity: 'webhook',
+          entityId: 'conduit',
+          action: 'processing_failed',
+          data: { 
+            error: error instanceof Error ? error.message : 'Unknown error',
+            headers: req.headers,
+            url: req.url
+          }
+        });
+      } catch (auditError) {
+        console.error('Failed to create audit entry for webhook error:', auditError);
+      }
+      
       res.status(500).json({ error: 'Processing failed' });
     }
   });
@@ -54,7 +91,7 @@ export async function setupConduitWebhooks(app: Express) {
 
 async function handleEscalationCreated(payload: any) {
   try {
-    const taskData = mapConduitEventToTask(payload);
+    const taskData = await mapConduitEventToTask(payload);
     
     if (!taskData) {
       console.log('Could not map Conduit escalation to task');
@@ -91,7 +128,7 @@ async function handleEscalationCreated(payload: any) {
 
 async function handleTaskCreated(payload: any) {
   try {
-    const taskData = mapConduitEventToTask(payload);
+    const taskData = await mapConduitEventToTask(payload);
     
     if (!taskData) return;
     
@@ -148,7 +185,7 @@ async function handleTaskUpdated(payload: any) {
 
 async function handleAIHelpRequested(payload: any) {
   try {
-    const taskData = mapConduitEventToTask(payload);
+    const taskData = await mapConduitEventToTask(payload);
     
     if (!taskData) return;
     
