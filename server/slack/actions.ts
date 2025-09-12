@@ -1,7 +1,178 @@
 import type { App } from '@slack/bolt';
 import { storage } from '../storage';
+import { satisfyFollowUp } from '../services/followup';
 
 export function setupActions(app: App) {
+  // Complete follow-up action
+  app.action('complete_followup', async ({ action, ack, respond, body }) => {
+    await ack();
+    
+    try {
+      const taskId = (action as any).value;
+      const userId = (body as any).user.id;
+      
+      const user = await storage.getUserBySlackId(userId);
+      if (!user) {
+        await respond({
+          text: '❌ User not found in system.',
+          replace_original: false
+        });
+        return;
+      }
+      
+      const task = await storage.getTask(taskId);
+      if (!task) {
+        await respond({
+          text: '❌ Task not found.',
+          replace_original: false
+        });
+        return;
+      }
+      
+      await satisfyFollowUp(taskId, `Marked complete by ${user.name} via Slack button`);
+      
+      await respond({
+        text: '✅ Follow-up marked as complete!',
+        replace_original: true
+      });
+      
+      console.log(`Follow-up task ${taskId} completed by ${user.name} via button`);
+    } catch (error) {
+      console.error('Error completing follow-up:', error);
+      await respond({
+        text: '❌ Failed to complete follow-up. Please try again.',
+        replace_original: false
+      });
+    }
+  });
+  
+  // Extend follow-up deadline action
+  app.action('extend_followup', async ({ action, ack, client, body }) => {
+    await ack();
+    
+    try {
+      const taskId = (action as any).value;
+      
+      await client.views.open({
+        trigger_id: (body as any).trigger_id,
+        view: {
+          type: 'modal',
+          callback_id: 'extend_followup_modal',
+          private_metadata: taskId,
+          title: {
+            type: 'plain_text',
+            text: 'Extend Follow-up Deadline'
+          },
+          blocks: [
+            {
+              type: 'input',
+              block_id: 'extension_block',
+              element: {
+                type: 'static_select',
+                action_id: 'extension_select',
+                placeholder: {
+                  type: 'plain_text',
+                  text: 'Select extension time...'
+                },
+                options: [
+                  {
+                    text: { type: 'plain_text', text: '1 hour' },
+                    value: '1h'
+                  },
+                  {
+                    text: { type: 'plain_text', text: '4 hours' },
+                    value: '4h'
+                  },
+                  {
+                    text: { type: 'plain_text', text: '1 day' },
+                    value: '1d'
+                  },
+                  {
+                    text: { type: 'plain_text', text: '3 days' },
+                    value: '3d'
+                  }
+                ]
+              },
+              label: {
+                type: 'plain_text',
+                text: 'Extension Time'
+              }
+            }
+          ],
+          submit: {
+            type: 'plain_text',
+            text: 'Extend'
+          }
+        }
+      });
+    } catch (error) {
+      console.error('Error opening extend follow-up modal:', error);
+    }
+  });
+  
+  // Take follow-up ownership action (for escalations)
+  app.action('take_followup_ownership', async ({ action, ack, respond, body }) => {
+    await ack();
+    
+    try {
+      const taskId = (action as any).value;
+      const userId = (body as any).user.id;
+      
+      const user = await storage.getUserBySlackId(userId);
+      if (!user) {
+        await respond({
+          text: '❌ User not found in system.',
+          replace_original: false
+        });
+        return;
+      }
+      
+      const task = await storage.getTask(taskId);
+      if (!task) {
+        await respond({
+          text: '❌ Task not found.',
+          replace_original: false
+        });
+        return;
+      }
+      
+      // Transfer ownership to the user who clicked the button
+      await storage.updateTask(taskId, { 
+        assigneeId: user.id,
+        evidence: {
+          ...task.evidence as any,
+          ownershipTransferred: true,
+          newOwnerId: user.id,
+          transferredAt: new Date()
+        }
+      });
+      
+      await storage.createAudit({
+        entity: 'task',
+        entityId: taskId,
+        action: 'followup_ownership_transferred',
+        actorId: user.id,
+        data: { 
+          originalAssigneeId: task.assigneeId,
+          newAssigneeId: user.id
+        }
+      });
+      
+      await respond({
+        text: `✅ Follow-up ownership transferred to ${user.name}!`,
+        replace_original: true
+      });
+      
+      console.log(`Follow-up task ${taskId} ownership transferred to ${user.name}`);
+    } catch (error) {
+      console.error('Error transferring follow-up ownership:', error);
+      await respond({
+        text: '❌ Failed to transfer ownership. Please try again.',
+        replace_original: false
+      });
+    }
+  });
+
   // Message action for creating tasks
   app.action('create_task_from_message', async ({ body, ack, client }) => {
     await ack();
@@ -258,6 +429,183 @@ export function setupActions(app: App) {
       });
     } catch (error) {
       console.error('Error in block_task action:', error);
+    }
+  });
+
+  // Complete follow-up action
+  app.action('complete_followup', async ({ action, ack, body, client }) => {
+    await ack();
+    
+    try {
+      const taskId = (action as any).value;
+      const user = await storage.getUserBySlackId((body as any).user.id);
+      
+      if (!user) return;
+      
+      const task = await storage.getTask(taskId);
+      if (!task) {
+        console.log(`Task ${taskId} not found`);
+        return;
+      }
+      
+      // Complete the follow-up
+      await completeFollowUp(taskId, 'Marked complete via Slack', user.slackId);
+      
+      // Send confirmation to user
+      await client.chat.postMessage({
+        channel: user.slackId,
+        text: `✅ Follow-up completed: "${task.title}"\n\nTask marked as done!`
+      });
+      
+      console.log(`Follow-up ${taskId} completed by ${user.name}`);
+    } catch (error) {
+      console.error('Error in complete_followup action:', error);
+    }
+  });
+
+  // Extend follow-up deadline action
+  app.action('extend_followup', async ({ action, ack, body, client }) => {
+    await ack();
+    
+    try {
+      const taskId = (action as any).value;
+      const trigger_id = (body as any).trigger_id;
+      
+      // Open modal for deadline extension
+      await client.views.open({
+        trigger_id,
+        view: {
+          type: 'modal',
+          callback_id: 'extend_followup_modal',
+          private_metadata: taskId,
+          title: {
+            type: 'plain_text',
+            text: 'Extend Deadline'
+          },
+          blocks: [
+            {
+              type: 'input',
+              block_id: 'new_due_date_block',
+              element: {
+                type: 'datetimepicker',
+                action_id: 'new_due_date_picker',
+                initial_date_time: Math.floor((Date.now() + 24 * 60 * 60 * 1000) / 1000) // Tomorrow
+              },
+              label: {
+                type: 'plain_text',
+                text: 'New Due Date & Time'
+              }
+            },
+            {
+              type: 'input',
+              block_id: 'reason_block',
+              element: {
+                type: 'plain_text_input',
+                action_id: 'reason_input',
+                multiline: true,
+                placeholder: {
+                  type: 'plain_text',
+                  text: 'Why is this deadline being extended? (optional)'
+                }
+              },
+              label: {
+                type: 'plain_text',
+                text: 'Reason (Optional)'
+              },
+              optional: true
+            }
+          ],
+          submit: {
+            type: 'plain_text',
+            text: 'Extend Deadline'
+          }
+        }
+      });
+    } catch (error) {
+      console.error('Error in extend_followup action:', error);
+    }
+  });
+
+  // Take follow-up ownership action
+  app.action('take_followup_ownership', async ({ action, ack, body, client }) => {
+    await ack();
+    
+    try {
+      const taskId = (action as any).value;
+      const user = await storage.getUserBySlackId((body as any).user.id);
+      
+      if (!user) return;
+      
+      const task = await storage.getTask(taskId);
+      if (!task) return;
+      
+      // Transfer ownership
+      await storage.updateTask(taskId, { 
+        assigneeId: user.id,
+        evidence: {
+          ...task.evidence as any,
+          ownershipTaken: true,
+          takenBy: user.slackId,
+          takenAt: new Date()
+        }
+      });
+      
+      await storage.createAudit({
+        entity: 'task',
+        entityId: taskId,
+        action: 'followup_ownership_taken',
+        actorId: user.id,
+        data: { previousAssignee: task.assigneeId }
+      });
+      
+      // Notify original assignee
+      if (task.assigneeId) {
+        const originalAssignee = await storage.getUser(task.assigneeId);
+        if (originalAssignee) {
+          await client.chat.postMessage({
+            channel: originalAssignee.slackId,
+            text: `📋 <@${user.slackId}> has taken ownership of your overdue follow-up: "${task.title}"`
+          });
+        }
+      }
+      
+      // Confirm to new owner
+      await client.chat.postMessage({
+        channel: user.slackId,
+        text: `✅ You've taken ownership of follow-up: "${task.title}"\n\nTask is now assigned to you.`
+      });
+      
+      console.log(`Follow-up ${taskId} ownership taken by ${user.name}`);
+    } catch (error) {
+      console.error('Error in take_followup_ownership action:', error);
+    }
+  });
+
+  // Handle deadline extension modal submission
+  app.view('extend_followup_modal', async ({ ack, body, view, client }) => {
+    await ack();
+    
+    try {
+      const taskId = view.private_metadata;
+      const values = view.state.values;
+      const newDueDateTimestamp = values.new_due_date_block.new_due_date_picker.selected_date_time;
+      const reason = values.reason_block?.reason_input?.value || 'No reason provided';
+      
+      const user = await storage.getUserBySlackId(body.user.id);
+      if (!user) return;
+      
+      const newDueDate = new Date(newDueDateTimestamp * 1000);
+      
+      await extendFollowUpDeadline(taskId, newDueDate, reason, user.slackId);
+      
+      await client.chat.postMessage({
+        channel: user.slackId,
+        text: `✅ Follow-up deadline extended\n\n*New Due Date:* ${newDueDate.toLocaleString()}\n*Reason:* ${reason}`
+      });
+      
+      console.log(`Follow-up ${taskId} deadline extended by ${user.name}`);
+    } catch (error) {
+      console.error('Error extending follow-up deadline:', error);
     }
   });
 }

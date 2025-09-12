@@ -205,6 +205,164 @@ export function setupCommands(app: App) {
     }
   });
 
+  // /followup command - create or manage individual follow-up
+  app.command('/followup', async ({ command, ack, respond }) => {
+    await ack();
+    
+    try {
+      const user = await storage.getUserBySlackId(command.user_id);
+      if (!user) {
+        await respond('User not found in system.');
+        return;
+      }
+
+      const text = command.text.trim();
+      
+      if (text.startsWith('complete ')) {
+        // Complete a follow-up: /followup complete TASK_ID
+        const taskId = text.replace('complete ', '').trim();
+        const task = await storage.getTask(taskId);
+        
+        if (!task || task.category !== 'follow_up') {
+          await respond('Follow-up task not found.');
+          return;
+        }
+        
+        if (task.assigneeId !== user.id) {
+          await respond('You can only complete your own follow-ups.');
+          return;
+        }
+        
+        await storage.updateTask(taskId, { status: 'DONE' });
+        await storage.createAudit({
+          entity: 'task',
+          entityId: taskId,
+          action: 'followup_completed_via_command',
+          actorId: user.id
+        });
+        
+        await respond(`✅ Follow-up completed: *${task.title}*`);
+      } else if (text === 'list' || text === '') {
+        // List user's follow-ups: /followup or /followup list
+        const followUps = await storage.getTasks({
+          category: 'follow_up',
+          status: ['OPEN', 'IN_PROGRESS'],
+          assigneeId: user.id
+        });
+        
+        if (followUps.length === 0) {
+          await respond('You have no active follow-ups. 🎉');
+          return;
+        }
+        
+        const followUpList = followUps.map(task => {
+          const dueText = task.dueAt ? 
+            `📅 Due: ${new Date(task.dueAt).toLocaleString()}` : '📅 No due date';
+          return `• *${task.title}* (ID: ${task.id})\n  ${dueText}\n  <${task.sourceUrl}|View original>`;
+        }).join('\n\n');
+        
+        await respond(`📋 Your active follow-ups (${followUps.length}):\n\n${followUpList}`);
+      } else {
+        await respond(
+          'Usage:\n' +
+          '• `/followup` or `/followup list` - List your active follow-ups\n' +
+          '• `/followup complete TASK_ID` - Mark a follow-up as complete'
+        );
+      }
+    } catch (error) {
+      console.error('Error in /followup command:', error);
+      await respond('❌ Failed to process follow-up command. Please try again.');
+    }
+  });
+  
+  // /followups command - bulk management and team view
+  app.command('/followups', async ({ command, ack, respond }) => {
+    await ack();
+    
+    try {
+      const user = await storage.getUserBySlackId(command.user_id);
+      if (!user) {
+        await respond('User not found in system.');
+        return;
+      }
+
+      const text = command.text.trim();
+      
+      if (text === 'team' || text === 'all') {
+        // Show all team follow-ups (requires admin/manager role)
+        const allFollowUps = await storage.getTasks({
+          category: 'follow_up',
+          status: ['OPEN', 'IN_PROGRESS']
+        });
+        
+        if (allFollowUps.length === 0) {
+          await respond('No active follow-ups in the team. 🎉');
+          return;
+        }
+        
+        // Group by assignee
+        const groupedFollowUps: { [key: string]: any[] } = {};
+        for (const task of allFollowUps) {
+          const assignee = task.assigneeId ? await storage.getUser(task.assigneeId) : null;
+          const assigneeName = assignee?.name || 'Unassigned';
+          
+          if (!groupedFollowUps[assigneeName]) {
+            groupedFollowUps[assigneeName] = [];
+          }
+          groupedFollowUps[assigneeName].push(task);
+        }
+        
+        const teamSummary = Object.entries(groupedFollowUps).map(([assigneeName, tasks]) => {
+          const overdue = tasks.filter(t => t.dueAt && new Date(t.dueAt) < new Date()).length;
+          const dueToday = tasks.filter(t => {
+            if (!t.dueAt) return false;
+            const due = new Date(t.dueAt);
+            const today = new Date();
+            return due.toDateString() === today.toDateString();
+          }).length;
+          
+          const status = overdue > 0 ? '🚨' : dueToday > 0 ? '⚠️' : '✅';
+          return `${status} *${assigneeName}*: ${tasks.length} active (${overdue} overdue, ${dueToday} due today)`;
+        }).join('\n');
+        
+        await respond(`📊 Team Follow-ups Summary:\n\n${teamSummary}\n\nTotal: ${allFollowUps.length} active follow-ups`);
+      } else if (text === 'overdue') {
+        // Show user's overdue follow-ups
+        const overdue = await storage.getTasks({
+          category: 'follow_up',
+          status: ['OPEN', 'IN_PROGRESS'],
+          assigneeId: user.id
+        });
+        
+        const overdueFiltered = overdue.filter(task => {
+          return task.dueAt && new Date(task.dueAt) < new Date();
+        });
+        
+        if (overdueFiltered.length === 0) {
+          await respond('You have no overdue follow-ups! 🎉');
+          return;
+        }
+        
+        const overdueList = overdueFiltered.map(task => {
+          const overdueDays = Math.ceil((new Date().getTime() - new Date(task.dueAt!).getTime()) / (1000 * 60 * 60 * 24));
+          return `🚨 *${task.title}* (ID: ${task.id})\n  📅 ${overdueDays} day(s) overdue\n  <${task.sourceUrl}|View original>`;
+        }).join('\n\n');
+        
+        await respond(`🚨 Your overdue follow-ups (${overdueFiltered.length}):\n\n${overdueList}`);
+      } else {
+        await respond(
+          'Usage:\n' +
+          '• `/followups` - Show your follow-ups summary\n' +
+          '• `/followups team` - Show team follow-ups summary\n' +
+          '• `/followups overdue` - Show your overdue follow-ups'
+        );
+      }
+    } catch (error) {
+      console.error('Error in /followups command:', error);
+      await respond('❌ Failed to process follow-ups command. Please try again.');
+    }
+  });
+
   // /brief command
   app.command('/brief', async ({ command, ack, respond }) => {
     await ack();
@@ -352,4 +510,190 @@ ${overdueTasks.length > 0 ? '🚨 *Priority: Address overdue tasks first*' : '�
       await respond('❌ Failed to handoff task. Please try again.');
     }
   });
+
+  // /followup command for manual follow-up creation
+  app.command('/followup', async ({ command, ack, respond, client }) => {
+    await ack();
+    
+    try {
+      const user = await storage.getUserBySlackId(command.user_id);
+      if (!user) {
+        await respond('User not found in system.');
+        return;
+      }
+
+      const text = command.text.trim();
+      
+      if (!text) {
+        // Show follow-up creation modal
+        await client.views.open({
+          trigger_id: command.trigger_id,
+          view: {
+            type: 'modal',
+            callback_id: 'create_followup_modal',
+            title: {
+              type: 'plain_text',
+              text: 'Create Follow-up'
+            },
+            blocks: [
+              {
+                type: 'input',
+                block_id: 'promise_block',
+                element: {
+                  type: 'plain_text_input',
+                  action_id: 'promise_input',
+                  multiline: true,
+                  placeholder: {
+                    type: 'plain_text',
+                    text: 'What commitment was made?'
+                  }
+                },
+                label: {
+                  type: 'plain_text',
+                  text: 'Promise/Commitment'
+                }
+              },
+              {
+                type: 'input',
+                block_id: 'assignee_block',
+                element: {
+                  type: 'users_select',
+                  action_id: 'assignee_select',
+                  placeholder: {
+                    type: 'plain_text',
+                    text: 'Who made the commitment?'
+                  }
+                },
+                label: {
+                  type: 'plain_text',
+                  text: 'Assignee'
+                }
+              },
+              {
+                type: 'input',
+                block_id: 'due_date_block',
+                element: {
+                  type: 'datetimepicker',
+                  action_id: 'due_date_picker',
+                  initial_date_time: Math.floor((Date.now() + 4 * 60 * 60 * 1000) / 1000)
+                },
+                label: {
+                  type: 'plain_text',
+                  text: 'Due Date & Time'
+                }
+              }
+            ],
+            submit: {
+              type: 'plain_text',
+              text: 'Create Follow-up'
+            }
+          }
+        });
+      } else {
+        // Quick follow-up creation with text parsing
+        const parts = text.split(' | ');
+        if (parts.length >= 2) {
+          const [promiseText, timeText] = parts;
+          
+          // Basic time parsing for quick creation
+          const dueDate = parseQuickTime(timeText.trim());
+          
+          const task = await storage.createTask({
+            type: 'follow_up',
+            title: `Follow-up: ${promiseText.trim()}`,
+            category: 'follow_up',
+            status: 'OPEN',
+            assigneeId: user.id,
+            dueAt: dueDate,
+            sourceKind: 'slack',
+            sourceId: command.channel_id,
+            playbookKey: 'follow_up_v1',
+            followUpMetadata: {
+              promiseText: promiseText.trim(),
+              createdManually: true,
+              channelId: command.channel_id,
+              participants: [user.slackId]
+            },
+            createdBy: user.slackId
+          });
+
+          await respond(`✅ Follow-up created: *${promiseText.trim()}*\nDue: ${dueDate.toLocaleString()}\nTask ID: ${task.id}`);
+        } else {
+          await respond('Usage: `/followup [promise text] | [time]`\nExample: `/followup Check on refund status | tomorrow 2pm`\n\nOr use `/followup` without text to open the full creation form.');
+        }
+      }
+    } catch (error) {
+      console.error('Error in /followup command:', error);
+      await respond('❌ Failed to create follow-up. Please try again.');
+    }
+  });
+
+  // /followups command to list active follow-ups
+  app.command('/followups', async ({ command, ack, respond }) => {
+    await ack();
+    
+    try {
+      const user = await storage.getUserBySlackId(command.user_id);
+      if (!user) {
+        await respond('User not found in system.');
+        return;
+      }
+
+      const followUps = await storage.getTasks({
+        category: 'follow_up',
+        assigneeId: user.id,
+        status: ['OPEN', 'IN_PROGRESS']
+      });
+
+      if (followUps.length === 0) {
+        await respond('📋 You have no active follow-ups. Great job staying on top of things!');
+        return;
+      }
+
+      const followUpList = followUps.map(task => {
+        const metadata = task.followUpMetadata as any || {};
+        const dueText = task.dueAt ? new Date(task.dueAt).toLocaleString() : 'No due date';
+        const overdueText = task.dueAt && new Date(task.dueAt) < new Date() ? ' ⚠️ OVERDUE' : '';
+        
+        return `• *${metadata.promiseText || task.title}*\n  Due: ${dueText}${overdueText}\n  ID: ${task.id}`;
+      }).join('\n\n');
+
+      await respond(`📋 *Your Active Follow-ups* (${followUps.length})\n\n${followUpList}\n\nUse \`/done [ID]\` to mark complete.`);
+    } catch (error) {
+      console.error('Error in /followups command:', error);
+      await respond('❌ Failed to retrieve follow-ups. Please try again.');
+    }
+  });
+}
+
+// Helper function for quick time parsing
+function parseQuickTime(timeText: string): Date {
+  const now = new Date();
+  const text = timeText.toLowerCase();
+  
+  if (text.includes('tomorrow')) {
+    const tomorrow = new Date(now);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    tomorrow.setHours(9, 0, 0, 0); // 9 AM tomorrow
+    return tomorrow;
+  }
+  
+  if (text.includes('today') || text.includes('later')) {
+    return new Date(now.getTime() + 4 * 60 * 60 * 1000); // 4 hours from now
+  }
+  
+  if (text.includes('hour')) {
+    const match = text.match(/(\d+)\s*hour/);
+    const hours = match ? parseInt(match[1]) : 2;
+    return new Date(now.getTime() + hours * 60 * 60 * 1000);
+  }
+  
+  if (text.includes('week')) {
+    const nextWeek = new Date(now);
+    nextWeek.setDate(nextWeek.getDate() + 7);
+    return nextWeek;
+  }
+  
+  // Default: 4 hours from now
+  return new Date(now.getTime() + 4 * 60 * 60 * 1000);
 }

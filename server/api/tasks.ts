@@ -3,6 +3,17 @@ import { storage } from "../storage";
 import { insertTaskSchema } from "@shared/schema";
 import { z } from "zod";
 
+// Category to playbook key mapping (shared function)
+function getCategoryPlaybookMapping(): Record<string, string> {
+  return {
+    'guest.messaging_known_answer': 'guest_messaging_known_answer_v1',
+    'reservations.refund_request': 'guest_refund_request_v1',
+    'reservations.cancellation_request': 'guest_cancellation_request_v1',
+    'access.smart_lock_issue': 'access_smart_lock_issue_v1',
+    'internet.wifi_issue': 'wifi_issue_v1'
+  };
+}
+
 // DoD validation helper function
 async function validateTaskDoD(task: any, evidence: any = {}) {
   try {
@@ -10,16 +21,42 @@ async function validateTaskDoD(task: any, evidence: any = {}) {
     
     // If task doesn't have DoD schema but has playbook, get from playbook
     if (!dod && task.playbookKey) {
+      console.log('[DoD Validation] Task missing dodSchema, fetching from playbook:', task.playbookKey);
       const playbook = await storage.getPlaybook(task.playbookKey);
       if (playbook) {
         const playbookContent = typeof playbook.content === 'string' ? 
           JSON.parse(playbook.content) : playbook.content;
         dod = playbookContent.definition_of_done;
+        console.log('[DoD Validation] Retrieved DoD from playbook:', dod);
       }
     }
     
-    // If no DoD requirements at all, it's considered valid
+    // If no DoD schema but category suggests one should exist, try category mapping
+    if (!dod && task.category) {
+      console.log('[DoD Validation] No DoD found via playbookKey, trying category mapping for:', task.category);
+      const categoryMapping = getCategoryPlaybookMapping();
+      const correctPlaybookKey = categoryMapping[task.category];
+      
+      if (correctPlaybookKey) {
+        console.log('[DoD Validation] Found mapped playbook key:', correctPlaybookKey);
+        const playbook = await storage.getPlaybook(correctPlaybookKey);
+        if (playbook) {
+          const playbookContent = typeof playbook.content === 'string' ? 
+            JSON.parse(playbook.content) : playbook.content;
+          dod = playbookContent.definition_of_done;
+          console.log('[DoD Validation] Retrieved DoD from mapped playbook:', dod);
+        }
+      }
+    }
+    
+    // If no DoD requirements at all, check if this category should have requirements
     if (!dod) {
+      const categoryMapping = getCategoryPlaybookMapping();
+      if (categoryMapping[task.category]) {
+        console.error(`[DoD Validation] ERROR: Category '${task.category}' should have DoD requirements but none found!`);
+        return { valid: false, missingFields: [], missingEvidence: [], error: 'DoD requirements missing for category that should have them' };
+      }
+      console.log('[DoD Validation] No DoD requirements for category:', task.category);
       return { valid: true, missingFields: [], missingEvidence: [] };
     }
     const missingFields: string[] = [];
@@ -235,6 +272,20 @@ export async function registerTasksAPI(app: Express) {
   app.post('/api/tasks', async (req, res) => {
     try {
       let taskData = insertTaskSchema.parse(req.body);
+      
+      // Fix playbookKey mapping if not provided or incorrect
+      const categoryMapping = getCategoryPlaybookMapping();
+      if (!taskData.playbookKey && taskData.category) {
+        taskData.playbookKey = categoryMapping[taskData.category] || taskData.category;
+        console.log(`[DoD Schema] Mapped category '${taskData.category}' to playbookKey '${taskData.playbookKey}'`);
+      } else if (taskData.playbookKey && categoryMapping[taskData.category]) {
+        // Ensure the playbookKey is the correct mapped one
+        const correctPlaybookKey = categoryMapping[taskData.category];
+        if (taskData.playbookKey !== correctPlaybookKey) {
+          console.log(`[DoD Schema] Correcting playbookKey from '${taskData.playbookKey}' to '${correctPlaybookKey}' for category '${taskData.category}'`);
+          taskData.playbookKey = correctPlaybookKey;
+        }
+      }
       
       // Populate DoD schema if playbook exists
       if (taskData.playbookKey) {

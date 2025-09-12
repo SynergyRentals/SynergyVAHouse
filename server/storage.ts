@@ -77,15 +77,30 @@ export class DatabaseStorage implements IStorage {
 
   async getTasks(filters?: any): Promise<Task[]> {
     let query = db.select().from(tasks);
+    const conditions = [];
     
     if (filters?.status) {
-      query = query.where(eq(tasks.status, filters.status));
+      if (Array.isArray(filters.status)) {
+        conditions.push(sql`${tasks.status} IN (${sql.join(filters.status.map((s: string) => sql`${s}`), sql`, `)})`);
+      } else {
+        conditions.push(eq(tasks.status, filters.status));
+      }
     }
     if (filters?.assigneeId) {
-      query = query.where(eq(tasks.assigneeId, filters.assigneeId));
+      conditions.push(eq(tasks.assigneeId, filters.assigneeId));
     }
     if (filters?.type) {
-      query = query.where(eq(tasks.type, filters.type));
+      conditions.push(eq(tasks.type, filters.type));
+    }
+    if (filters?.category) {
+      conditions.push(eq(tasks.category, filters.category));
+    }
+    if (filters?.sourceId) {
+      conditions.push(eq(tasks.sourceId, filters.sourceId));
+    }
+    
+    if (conditions.length > 0) {
+      query = query.where(and(...conditions));
     }
     
     return await query.orderBy(desc(tasks.createdAt));

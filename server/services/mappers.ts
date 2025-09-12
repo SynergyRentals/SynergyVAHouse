@@ -1,5 +1,16 @@
 import { storage } from '../storage';
 
+// Category to playbook key mapping
+function getCategoryPlaybookMapping(): Record<string, string> {
+  return {
+    'guest.messaging_known_answer': 'guest_messaging_known_answer_v1',
+    'reservations.refund_request': 'guest_refund_request_v1',
+    'reservations.cancellation_request': 'guest_cancellation_request_v1',
+    'access.smart_lock_issue': 'access_smart_lock_issue_v1',
+    'internet.wifi_issue': 'wifi_issue_v1'
+  };
+}
+
 export async function mapConduitEventToTask(payload: any): Promise<any | null> {
   try {
     // Map Conduit event to our task structure
@@ -33,12 +44,18 @@ export async function mapConduitEventToTask(payload: any): Promise<any | null> {
     // Assign based on category
     const assigneeId = await guessAssigneeFromCategory(category);
     
+    // Map category to proper playbook key
+    const categoryMapping = getCategoryPlaybookMapping();
+    const playbookKey = categoryMapping[category] || category;
+    
+    console.log(`[Mapper] Category: ${category}, PlaybookKey: ${playbookKey}`);
+    
     return {
       title,
       category,
       assigneeId,
       priority: event.escalation?.priority === 'high' || event.task?.priority === 'high' ? 1 : 3,
-      playbookKey: category
+      playbookKey
     };
   } catch (error) {
     console.error('Error mapping Conduit event:', error);
@@ -69,12 +86,18 @@ export async function mapSuiteOpEventToTask(payload: any): Promise<any | null> {
     
     const assigneeId = await guessAssigneeFromCategory(category);
     
+    // Map category to proper playbook key
+    const categoryMapping = getCategoryPlaybookMapping();
+    const playbookKey = categoryMapping[category] || category;
+    
+    console.log(`[Mapper] Category: ${category}, PlaybookKey: ${playbookKey}`);
+    
     return {
       title,
       category,
       assigneeId,
       priority: task.priority === 'urgent' || task.priority === 'high' ? 1 : 3,
-      playbookKey: category
+      playbookKey
     };
   } catch (error) {
     console.error('Error mapping SuiteOp event:', error);

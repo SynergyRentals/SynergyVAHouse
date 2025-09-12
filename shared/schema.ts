@@ -4,7 +4,7 @@ import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
-export const taskTypeEnum = pgEnum('task_type', ['daily', 'weekly', 'reactive', 'project']);
+export const taskTypeEnum = pgEnum('task_type', ['daily', 'weekly', 'reactive', 'project', 'follow_up']);
 export const taskStatusEnum = pgEnum('task_status', ['OPEN', 'IN_PROGRESS', 'WAITING', 'BLOCKED', 'DONE']);
 
 export const users = pgTable("users", {
@@ -32,6 +32,7 @@ export const tasks = pgTable("tasks", {
   playbookKey: text("playbook_key"),
   dodSchema: jsonb("dod_schema"),
   evidence: jsonb("evidence"), // [{type, url, note}]
+  followUpMetadata: jsonb("followup_metadata"), // {originalMessage, promiseText, extractedTimeframe, threadContext, participants}
   approvals: jsonb("approvals"), // [{bySlackId, at, decision}]
   createdBy: text("created_by"),
   createdAt: timestamp("created_at").defaultNow(),

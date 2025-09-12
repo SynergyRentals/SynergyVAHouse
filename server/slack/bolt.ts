@@ -4,8 +4,10 @@ import { setupAppHome } from './app_home';
 import { setupCommands } from './commands';
 import { setupActions } from './actions';
 import { setupModals } from './modals';
+import { setupMessageEvents } from './message_events';
 
 let slackApp: App;
+let botUserId: string | null = null;
 
 export async function initializeSlackApp(app: Express) {
   if (!process.env.SLACK_BOT_TOKEN || !process.env.SLACK_SIGNING_SECRET) {
@@ -34,6 +36,7 @@ export async function initializeSlackApp(app: Express) {
   setupCommands(slackApp);
   setupActions(slackApp);
   setupModals(slackApp);
+  setupMessageEvents(slackApp);
 
   // Register Slack routes with Express
   app.post('/slack/events', async (req, res) => {
@@ -55,9 +58,22 @@ export async function initializeSlackApp(app: Express) {
   });
 
   await slackApp.start();
-  console.log('⚡️ Slack app is running!');
+  
+  // Cache bot user ID for filtering
+  try {
+    const authTest = await slackApp.client.auth.test();
+    botUserId = authTest.user_id || null;
+    console.log(`⚡️ Slack app is running! Bot User ID: ${botUserId}`);
+  } catch (error) {
+    console.error('Failed to get bot user ID:', error);
+    console.log('⚡️ Slack app is running! (without bot user ID)');
+  }
 }
 
 export function getSlackApp(): App {
   return slackApp;
+}
+
+export function getBotUserId(): string | null {
+  return botUserId;
 }

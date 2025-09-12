@@ -35,9 +35,13 @@ export function startScheduler() {
     }
   });
   
-  // Follow-up monitoring - every 15 minutes
-  cron.schedule('*/15 * * * *', async () => {
-    await checkOverdueFollowUps();
+  // Follow-up monitoring - every 5 minutes
+  cron.schedule('*/5 * * * *', async () => {
+    try {
+      await checkOverdueFollowUps();
+    } catch (error) {
+      console.error('Error in follow-up monitoring:', error);
+    }
   });
   
   // AM briefings for VAs - 09:00 Manila time (weekdays)

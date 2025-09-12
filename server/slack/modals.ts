@@ -2,6 +2,18 @@ import type { App } from '@slack/bolt';
 import { storage } from '../storage';
 import { inferAssigneeFromMessage } from '../services/mappers';
 import { startSLATimer } from '../services/sla';
+import { createManualFollowUp } from '../services/followup';
+
+// Category to playbook key mapping (shared with mappers)
+function getCategoryPlaybookMapping(): Record<string, string> {
+  return {
+    'guest.messaging_known_answer': 'guest_messaging_known_answer_v1',
+    'reservations.refund_request': 'guest_refund_request_v1',
+    'reservations.cancellation_request': 'guest_cancellation_request_v1',
+    'access.smart_lock_issue': 'access_smart_lock_issue_v1',
+    'internet.wifi_issue': 'wifi_issue_v1'
+  };
+}
 
 export function setupModals(app: App) {
   // Create task modal submission
@@ -16,6 +28,12 @@ export function setupModals(app: App) {
       const user = await storage.getUserBySlackId(body.user.id);
       if (!user) return;
       
+      // Map category to proper playbook key
+      const categoryMapping = getCategoryPlaybookMapping();
+      const playbookKey = categoryMapping[category || 'general'] || (category || 'general');
+      
+      console.log(`[Modal] Creating task with Category: ${category}, PlaybookKey: ${playbookKey}`);
+
       const task = await storage.createTask({
         type: 'reactive',
         title: title || 'Untitled task',
@@ -23,12 +41,13 @@ export function setupModals(app: App) {
         status: 'OPEN',
         assigneeId: user.id,
         createdBy: user.slackId,
-        sourceKind: 'slack'
+        sourceKind: 'slack',
+        playbookKey
       });
 
       // Start SLA timer if category has playbook
-      if (category) {
-        const playbook = await storage.getPlaybook(category);
+      if (playbookKey) {
+        const playbook = await storage.getPlaybook(playbookKey);
         if (playbook) {
           await startSLATimer(task.id, playbook);
         }
@@ -68,6 +87,12 @@ export function setupModals(app: App) {
       
       if (!creator) return;
       
+      // Map category to proper playbook key
+      const categoryMapping = getCategoryPlaybookMapping();
+      const playbookKey = categoryMapping[category || 'general'] || (category || 'general');
+      
+      console.log(`[Modal] Creating task from message with Category: ${category}, PlaybookKey: ${playbookKey}`);
+
       const task = await storage.createTask({
         type: 'reactive',
         title: title || 'Task from message',
@@ -77,12 +102,13 @@ export function setupModals(app: App) {
         createdBy: creator.slackId,
         sourceKind: 'slack',
         sourceId: metadata.channelId,
-        sourceUrl: metadata.sourceUrl
+        sourceUrl: metadata.sourceUrl,
+        playbookKey
       });
 
       // Start SLA timer
-      if (category) {
-        const playbook = await storage.getPlaybook(category);
+      if (playbookKey) {
+        const playbook = await storage.getPlaybook(playbookKey);
         if (playbook) {
           await startSLATimer(task.id, playbook);
         }
@@ -207,6 +233,54 @@ export function setupModals(app: App) {
       });
     } catch (error) {
       console.error('Error blocking task:', error);
+    }
+  });
+
+  // Create follow-up modal submission
+  app.view('create_followup_modal', async ({ ack, body, view, client }) => {
+    await ack();
+    
+    try {
+      const values = view.state.values;
+      const promiseText = values.promise_block.promise_input.value;
+      const assigneeSlackId = values.assignee_block.assignee_select.selected_user;
+      const dueDateTimestamp = values.due_date_block.due_date_picker.selected_date_time;
+      
+      const creator = await storage.getUserBySlackId(body.user.id);
+      const assignee = assigneeSlackId ? await storage.getUserBySlackId(assigneeSlackId) : null;
+      
+      if (!creator || !assignee) {
+        console.error('Creator or assignee not found');
+        return;
+      }
+      
+      const dueDate = new Date(dueDateTimestamp * 1000);
+      
+      const task = await createManualFollowUp(
+        assigneeSlackId,
+        promiseText || 'Manual follow-up',
+        dueDate,
+        'direct_message', // Since created from modal, use DM context
+        creator.slackId
+      );
+      
+      // Send confirmation to creator
+      await client.chat.postMessage({
+        channel: creator.slackId,
+        text: `✅ Follow-up created for <@${assigneeSlackId}>\n\n*Promise:* "${promiseText}"\n*Due:* ${dueDate.toLocaleString()}\n*Task ID:* ${task.id}`
+      });
+      
+      // Notify assignee if different from creator
+      if (assigneeSlackId !== creator.slackId) {
+        await client.chat.postMessage({
+          channel: assigneeSlackId,
+          text: `📋 Follow-up task assigned to you by <@${creator.slackId}>\n\n*Promise:* "${promiseText}"\n*Due:* ${dueDate.toLocaleString()}\n*Task ID:* ${task.id}`
+        });
+      }
+      
+      console.log(`Manual follow-up created: ${task.id}`);
+    } catch (error) {
+      console.error('Error creating follow-up from modal:', error);
     }
   });
 }

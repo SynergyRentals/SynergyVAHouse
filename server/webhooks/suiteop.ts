@@ -103,7 +103,7 @@ async function handleTaskCreated(payload: any) {
     };
     
     // Get playbook and extract DoD schema
-    const playbook = await storage.getPlaybook(taskData.category);
+    const playbook = await storage.getPlaybook(taskData.playbookKey);
     if (playbook) {
       const playbookContent = typeof playbook.content === 'string' ? 
         JSON.parse(playbook.content) : playbook.content;
