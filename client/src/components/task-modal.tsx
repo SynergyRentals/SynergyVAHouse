@@ -78,7 +78,7 @@ interface Playbook {
 }
 
 interface TaskModalProps {
-  task: Task;
+  task: Task | null;
   isOpen: boolean;
   onClose: () => void;
 }
@@ -87,24 +87,52 @@ export function TaskModal({ task, isOpen, onClose }: TaskModalProps) {
   const [isCompleting, setIsCompleting] = useState(false);
   const [evidenceData, setEvidenceData] = useState<Record<string, any>>({});
   const [newComment, setNewComment] = useState("");
+  const [isCreatingNew, setIsCreatingNew] = useState(!task);
+  const [newTaskData, setNewTaskData] = useState({
+    title: '',
+    category: '',
+    priority: 3,
+    assigneeId: '',
+    dueAt: '',
+    description: ''
+  });
   
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
+  // Reset component state when task prop changes
+  React.useEffect(() => {
+    setIsCreatingNew(!task);
+    if (!task) {
+      setNewTaskData({
+        title: '',
+        category: '',
+        priority: 3,
+        assigneeId: '',
+        dueAt: '',
+        description: ''
+      });
+    }
+    setIsCompleting(false);
+    setEvidenceData({});
+    setNewComment("");
+  }, [task]);
+
   // Fetch detailed task data
   const { data: detailedTask, isLoading } = useQuery<Task>({
-    queryKey: ['/api/tasks', task.id],
-    enabled: isOpen,
+    queryKey: ['/api/tasks', task?.id],
+    enabled: isOpen && !!task?.id,
   });
 
   // Fetch playbook if task has one
   const { data: playbook } = useQuery<Playbook>({
-    queryKey: ['/api/playbooks', task.playbookKey],
-    enabled: !!task.playbookKey,
+    queryKey: ['/api/playbooks', task?.playbookKey],
+    enabled: !!task?.playbookKey,
   });
 
   const updateTaskMutation = useMutation({
     mutationFn: async (updates: Partial<Task>) => {
+      if (!task?.id) throw new Error('No task to update');
       const response = await fetch(`/api/tasks/${task.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -122,8 +150,33 @@ export function TaskModal({ task, isOpen, onClose }: TaskModalProps) {
     },
   });
 
+  const createTaskMutation = useMutation({
+    mutationFn: async (taskData: typeof newTaskData) => {
+      const response = await fetch('/api/tasks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...taskData,
+          status: 'OPEN',
+          dueAt: taskData.dueAt || null,
+        }),
+      });
+      if (!response.ok) throw new Error('Failed to create task');
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/tasks'] });
+      toast({ title: "Task created successfully" });
+      onClose();
+    },
+    onError: () => {
+      toast({ title: "Failed to create task", variant: "destructive" });
+    },
+  });
+
   const addCommentMutation = useMutation({
     mutationFn: async (comment: string) => {
+      if (!task?.id) throw new Error('No task to add comment to');
       const response = await fetch(`/api/tasks/${task.id}/comments`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -133,7 +186,7 @@ export function TaskModal({ task, isOpen, onClose }: TaskModalProps) {
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/tasks', task.id] });
+      queryClient.invalidateQueries({ queryKey: ['/api/tasks', task?.id] });
       setNewComment("");
       toast({ title: "Comment added" });
     },
@@ -157,7 +210,7 @@ export function TaskModal({ task, isOpen, onClose }: TaskModalProps) {
   };
 
   const getSLAStatus = () => {
-    if (!task.slaAt) return null;
+    if (!task?.slaAt) return null;
     const now = new Date();
     const slaTime = new Date(task.slaAt);
     
@@ -209,14 +262,26 @@ export function TaskModal({ task, isOpen, onClose }: TaskModalProps) {
     
     updateTaskMutation.mutate({ 
       status: 'DONE',
-      evidence: { ...task.evidence, ...evidenceData, completedAt: new Date() }
+      evidence: { ...task?.evidence, ...evidenceData, completedAt: new Date() }
     });
     setIsCompleting(false);
     onClose();
   };
 
   const currentTask = detailedTask || task;
-  const slaStatus = getSLAStatus();
+  const slaStatus = currentTask ? getSLAStatus() : null;
+
+  const handleCreateTask = () => {
+    if (!newTaskData.title || !newTaskData.category) {
+      toast({ 
+        title: "Missing required fields", 
+        description: "Please enter a title and category",
+        variant: "destructive" 
+      });
+      return;
+    }
+    createTaskMutation.mutate(newTaskData);
+  };
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -224,14 +289,18 @@ export function TaskModal({ task, isOpen, onClose }: TaskModalProps) {
         <DialogHeader>
           <div className="flex items-start justify-between">
             <div className="flex-1">
-              <DialogTitle className="text-xl mb-2">{currentTask.title}</DialogTitle>
-              <DialogDescription className="flex items-center space-x-4">
-                <Badge className={getStatusColor(currentTask.status)}>
-                  {currentTask.status.replace('_', ' ')}
-                </Badge>
-                <span className="text-lg">{getPriorityIcon(currentTask.priority)}</span>
-                <span>{currentTask.category.replace(/\./g, ' → ')}</span>
-              </DialogDescription>
+              <DialogTitle className="text-xl mb-2">
+                {isCreatingNew ? "Create New Task" : currentTask?.title || "Loading..."}
+              </DialogTitle>
+              {!isCreatingNew && currentTask && (
+                <DialogDescription className="flex items-center space-x-4">
+                  <Badge className={getStatusColor(currentTask.status)}>
+                    {currentTask.status.replace('_', ' ')}
+                  </Badge>
+                  <span className="text-lg">{getPriorityIcon(currentTask.priority)}</span>
+                  <span>{currentTask.category.replace(/\./g, ' → ')}</span>
+                </DialogDescription>
+              )}
             </div>
           </div>
         </DialogHeader>
@@ -240,7 +309,86 @@ export function TaskModal({ task, isOpen, onClose }: TaskModalProps) {
           <div className="flex items-center justify-center py-8">
             <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
           </div>
-        ) : (
+        ) : isCreatingNew ? (
+          <div className="space-y-6">
+            {/* New Task Creation Form */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="task-title">Title *</Label>
+                <Input
+                  id="task-title"
+                  value={newTaskData.title}
+                  onChange={(e) => setNewTaskData(prev => ({ ...prev, title: e.target.value }))}
+                  placeholder="Enter task title"
+                  data-testid="input-task-title"
+                />
+              </div>
+              
+              <div>
+                <Label htmlFor="task-category">Category *</Label>
+                <Input
+                  id="task-category"
+                  value={newTaskData.category}
+                  onChange={(e) => setNewTaskData(prev => ({ ...prev, category: e.target.value }))}
+                  placeholder="e.g., support.urgent"
+                  data-testid="input-task-category"
+                />
+              </div>
+              
+              <div>
+                <Label htmlFor="task-priority">Priority</Label>
+                <Select value={newTaskData.priority.toString()} onValueChange={(value) => setNewTaskData(prev => ({ ...prev, priority: parseInt(value) }))}>
+                  <SelectTrigger data-testid="select-task-priority">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="1">🔴 High (1)</SelectItem>
+                    <SelectItem value="2">🔴 High (2)</SelectItem>
+                    <SelectItem value="3">🟡 Medium (3)</SelectItem>
+                    <SelectItem value="4">🟢 Low (4)</SelectItem>
+                    <SelectItem value="5">🟢 Low (5)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              <div>
+                <Label htmlFor="task-due">Due Date</Label>
+                <Input
+                  id="task-due"
+                  type="datetime-local"
+                  value={newTaskData.dueAt}
+                  onChange={(e) => setNewTaskData(prev => ({ ...prev, dueAt: e.target.value }))}
+                  data-testid="input-task-due"
+                />
+              </div>
+            </div>
+            
+            <div>
+              <Label htmlFor="task-description">Description</Label>
+              <Textarea
+                id="task-description"
+                value={newTaskData.description}
+                onChange={(e) => setNewTaskData(prev => ({ ...prev, description: e.target.value }))}
+                placeholder="Add task description..."
+                rows={4}
+                data-testid="textarea-task-description"
+              />
+            </div>
+            
+            <div className="flex items-center justify-end space-x-3">
+              <Button variant="outline" onClick={onClose}>
+                Cancel
+              </Button>
+              <Button 
+                onClick={handleCreateTask}
+                disabled={createTaskMutation.isPending || !newTaskData.title || !newTaskData.category}
+                data-testid="button-create-task"
+              >
+                {createTaskMutation.isPending ? "Creating..." : "Create Task"}
+              </Button>
+            </div>
+          </div>
+        ) : currentTask ? (
           <div className="space-y-6">
             {/* Task Details */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -458,6 +606,10 @@ export function TaskModal({ task, isOpen, onClose }: TaskModalProps) {
                 </div>
               </div>
             )}
+          </div>
+        ) : (
+          <div className="flex items-center justify-center py-8 text-muted-foreground">
+            <p>No task data available</p>
           </div>
         )}
       </DialogContent>

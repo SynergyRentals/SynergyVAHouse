@@ -1,9 +1,10 @@
 import express from 'express';
 import bodyParser from 'body-parser';
+import { createServer } from 'http';
 import { registerRoutes } from './routes';
 import { initializeSlackApp } from './slack/bolt';
 import { startScheduler } from './jobs/scheduler';
-import { log } from './vite';
+import { log, setupVite } from './vite';
 
 const app = express();
 
@@ -32,12 +33,18 @@ async function start() {
     // Register API routes
     await registerRoutes(app);
     
+    // Create HTTP server
+    const server = createServer(app);
+    
+    // Setup Vite for serving frontend
+    await setupVite(app, server);
+    
     // Start background jobs
     startScheduler();
     
     // Start server
     const port = parseInt(process.env.PORT || '5000', 10);
-    app.listen(port, '0.0.0.0', () => {
+    server.listen(port, '0.0.0.0', () => {
       log(`Synergy VA Ops Hub serving on port ${port}`);
     });
   } catch (error) {

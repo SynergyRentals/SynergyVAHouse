@@ -25,6 +25,7 @@ interface Task {
 
 export default function Tasks() {
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [isCreatingTask, setIsCreatingTask] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
@@ -96,7 +97,10 @@ export default function Tasks() {
             <h1 className="text-3xl font-bold text-foreground">Tasks</h1>
             <p className="text-muted-foreground">Manage all your tasks and track progress</p>
           </div>
-          <Button data-testid="button-create-task">
+          <Button 
+            data-testid="button-create-task"
+            onClick={() => setIsCreatingTask(true)}
+          >
             <Plus className="w-4 h-4 mr-2" />
             New Task
           </Button>
@@ -222,11 +226,14 @@ export default function Tasks() {
       </div>
 
       {/* Task Modal */}
-      {selectedTask && (
+      {(selectedTask || isCreatingTask) && (
         <TaskModal 
           task={selectedTask} 
-          isOpen={!!selectedTask} 
-          onClose={() => setSelectedTask(null)} 
+          isOpen={!!(selectedTask || isCreatingTask)} 
+          onClose={() => {
+            setSelectedTask(null);
+            setIsCreatingTask(false);
+          }} 
         />
       )}
     </div>
