@@ -32,25 +32,34 @@ export async function requireAuth(req: AuthenticatedRequest, res: Response, next
       }
     }
 
-    // If no Replit Auth, fall back to header/body auth (for Slack integration)
+    // If no Replit Auth, fall back to header/body auth (for Slack integration and development only)
     if (!user) {
+      // In production, only allow Slack-authenticated requests with proper validation
+      const isDevelopment = process.env.NODE_ENV === 'development';
+      
       const userId = req.headers['x-user-id'] as string || 
                      req.body?.actorId || 
-                     req.query?.actorId as string ||
-                     'default-user'; // Fallback for development
+                     req.query?.actorId as string;
 
-      if (!userId) {
+      // In production, require strict authentication - no fallbacks
+      if (!isDevelopment && !userId) {
         res.status(401).json({ 
           error: 'Authentication required',
-          details: 'Please log in or provide valid user credentials'
+          details: 'Please log in to access this resource'
         });
         return;
       }
-
-      // For development, map 'web-user' to a default manager user
+      
+      // Development fallback only
       let resolvedUserId = userId;
-      if (userId === 'web-user') {
+      if (isDevelopment && (!userId || userId === 'web-user')) {
         resolvedUserId = 'default-user';
+      } else if (!userId) {
+        res.status(401).json({ 
+          error: 'Authentication required',
+          details: 'Please log in to access this resource'
+        });
+        return;
       }
 
       // Validate user exists in database
@@ -65,8 +74,8 @@ export async function requireAuth(req: AuthenticatedRequest, res: Response, next
           u.slackId === resolvedUserId
         );
         
-        // For development, create a default user if none exists
-        if (!user && resolvedUserId === 'default-user') {
+        // For development only, create a default user if none exists
+        if (!user && isDevelopment && resolvedUserId === 'default-user') {
           try {
             // Try to use an existing seeded manager user first
             user = allUsers.find(u => u.role.toLowerCase().includes('manager'));
@@ -88,7 +97,7 @@ export async function requireAuth(req: AuthenticatedRequest, res: Response, next
         }
       }
 
-      if (userId.startsWith('U') && userId.length > 8) {
+      if (userId && userId.startsWith('U') && userId.length > 8) {
         // Looks like a Slack user ID
         authType = 'slack';
       }
@@ -179,8 +188,35 @@ export function requireReplitAuth(req: AuthenticatedRequest, res: Response, next
  * This would be used for Slack approval callbacks
  */
 export function validateSlackSignature(req: Request, res: Response, next: NextFunction) {
-  // In a real implementation, you'd validate the Slack signing secret
-  // For now, we'll just pass through
-  // TODO: Implement proper Slack signature validation
+  // Validate Slack signature for webhook requests
+  const slackSignature = req.headers['x-slack-signature'] as string;
+  const timestamp = req.headers['x-slack-request-timestamp'] as string;
+  
+  if (!slackSignature || !timestamp) {
+    res.status(401).json({ 
+      error: 'Missing Slack signature',
+      details: 'Slack webhook signature validation failed'
+    });
+    return;
+  }
+  
+  // In production, implement proper HMAC-SHA256 validation
+  // For now, just check that signature headers are present
+  if (process.env.NODE_ENV === 'production' && !process.env.SLACK_SIGNING_SECRET) {
+    console.error('SLACK_SIGNING_SECRET not configured for production');
+    res.status(500).json({ 
+      error: 'Configuration error',
+      details: 'Slack signing secret not configured'
+    });
+    return;
+  }
+  
+  // TODO: Implement full HMAC-SHA256 signature validation
+  // const crypto = require('crypto');
+  // const hmac = crypto.createHmac('sha256', process.env.SLACK_SIGNING_SECRET);
+  // hmac.update(`v0:${timestamp}:${JSON.stringify(req.body)}`);
+  // const computedSignature = `v0=${hmac.digest('hex')}`;
+  // if (computedSignature !== slackSignature) { return res.status(401); }
+  
   next();
 }

@@ -12,6 +12,8 @@ export interface IStorage {
   // Users
   getUser(id: string): Promise<User | undefined>;
   getUserBySlackId(slackId: string): Promise<User | undefined>;
+  getUserByEmail(email: string): Promise<User | undefined>;
+  getUserByReplitSub(replitSub: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
   upsertUser(user: UpsertUser): Promise<User>; // Required for Replit Auth
   getAllUsers(): Promise<User[]>;
@@ -76,16 +78,26 @@ export class DatabaseStorage implements IStorage {
   async upsertUser(userData: UpsertUser): Promise<User> {
     const [user] = await db
       .insert(users)
-      .values(userData)
+      .values(userData as any)
       .onConflictDoUpdate({
         target: users.id,
         set: {
           ...userData,
           updatedAt: new Date(),
-        },
+        } as any,
       })
       .returning();
     return user;
+  }
+
+  async getUserByEmail(email: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.email, email));
+    return user || undefined;
+  }
+
+  async getUserByReplitSub(replitSub: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.replitSub, replitSub));
+    return user || undefined;
   }
 
   async getAllUsers(): Promise<User[]> {

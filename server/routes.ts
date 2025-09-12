@@ -8,7 +8,7 @@ import { registerAISuggestionsAPI } from "./api/ai-suggestions";
 import { setupConduitWebhooks } from "./webhooks/conduit";
 import { setupSuiteOpWebhooks } from "./webhooks/suiteop";
 import { setupAuth, isAuthenticated } from "./replitAuth";
-import { requireReplitAuth, type AuthenticatedRequest } from "./middleware/auth";
+import { requireReplitAuth, requireAuth, type AuthenticatedRequest } from "./middleware/auth";
 
 export async function registerRoutes(app: Express): Promise<void> {
   // Setup Replit Auth middleware first
@@ -20,13 +20,14 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // Auth routes for frontend
-  app.get('/api/auth/user', async (req: AuthenticatedRequest, res) => {
+  app.get('/api/auth/user', async (req, res) => {
     try {
       // Check if user has Replit Auth session
       if (req.isAuthenticated && req.isAuthenticated() && req.user) {
         const sessionUser = req.user as any;
         if (sessionUser.claims?.sub) {
-          const user = await storage.getUser(sessionUser.claims.sub);
+          // Find user by replitSub instead of using sub as primary key
+          const user = await storage.getUserByReplitSub(sessionUser.claims.sub);
           if (user) {
             res.json({
               id: user.id,
@@ -68,8 +69,8 @@ export async function registerRoutes(app: Express): Promise<void> {
   await setupConduitWebhooks(app);
   await setupSuiteOpWebhooks(app);
 
-  // Users API
-  app.get('/api/users', async (req, res) => {
+  // Users API - Protected endpoint
+  app.get('/api/users', requireAuth as any, async (req, res) => {
     try {
       const users = await storage.getAllUsers();
       res.json(users);

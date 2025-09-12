@@ -30,6 +30,7 @@ export const users = pgTable("users", {
   firstName: varchar("first_name"),
   lastName: varchar("last_name"),
   profileImageUrl: varchar("profile_image_url"),
+  replitSub: varchar("replit_sub").unique(), // Links to Replit Auth subject for identity linking
   // Additional enhanced fields
   permissions: jsonb("permissions"), // {read: boolean, write: boolean, admin: boolean, etc.}
   preferences: jsonb("preferences"), // {theme: string, notifications: boolean, etc.}

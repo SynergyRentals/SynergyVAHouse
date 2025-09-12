@@ -57,23 +57,49 @@ function updateUserSession(
   user.expires_at = user.claims?.exp;
 }
 
-async function upsertUser(
+async function linkOrCreateUser(
   claims: any,
 ) {
-  // Build name from first/last name or use email as fallback
+  const replitSub = claims["sub"];
+  const email = claims["email"];
+  
+  // First, try to find existing user by Replit sub
+  let user = await storage.getUserByReplitSub(replitSub);
+  if (user) {
+    return; // User already linked
+  }
+  
+  // If not found by replitSub, try to find by email to link existing account
+  if (email) {
+    user = await storage.getUserByEmail(email);
+    if (user) {
+      // Link existing user account to Replit auth by adding replitSub
+      await storage.upsertUser({
+        id: user.id, // Keep existing UUID as primary key
+        replitSub: replitSub, // Add Replit sub for linking
+        email: email,
+        firstName: claims["first_name"],
+        lastName: claims["last_name"],
+        profileImageUrl: claims["profile_image_url"],
+      });
+      return;
+    }
+  }
+  
+  // Create new user if no existing account found
   const displayName = [claims["first_name"], claims["last_name"]]
     .filter(Boolean)
-    .join(" ") || claims["email"]?.split("@")[0] || "Web User";
+    .join(" ") || email?.split("@")[0] || "Web User";
 
-  await storage.upsertUser({
-    id: claims["sub"],
-    email: claims["email"],
+  await storage.createUser({
+    replitSub: replitSub,
+    email: email,
     firstName: claims["first_name"],
     lastName: claims["last_name"],
     profileImageUrl: claims["profile_image_url"],
-    name: displayName, // Map to existing name field
-    role: "web_user", // Default role for web users
-    timezone: "Asia/Manila", // Default timezone
+    name: displayName, // Required field with sensible default
+    role: "web_user", // Required field with default role
+    timezone: "Asia/Manila", // Required field with default timezone
     isActive: true,
     preferences: {
       theme: "light",
@@ -101,7 +127,7 @@ export async function setupAuth(app: Express) {
   ) => {
     const user = {};
     updateUserSession(user, tokens);
-    await upsertUser(tokens.claims());
+    await linkOrCreateUser(tokens.claims());
     verified(null, user);
   };
 
