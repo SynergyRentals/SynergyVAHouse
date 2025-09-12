@@ -180,7 +180,8 @@ export async function seedPlaybooks() {
   }
 }
 
-if (require.main === module) {
+// Check if this file is being executed directly
+if (import.meta.url === `file://${process.argv[1]}`) {
   seedPlaybooks().then(() => {
     console.log('Seeding completed');
     process.exit(0);

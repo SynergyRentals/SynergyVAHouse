@@ -269,7 +269,8 @@ export async function seedChecklists() {
   }
 }
 
-if (require.main === module) {
+// Check if this file is being executed directly
+if (import.meta.url === `file://${process.argv[1]}`) {
   seedChecklists().then(() => {
     console.log('Seeding completed');
     process.exit(0);
