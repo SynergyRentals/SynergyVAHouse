@@ -309,11 +309,7 @@ export default function Kanban() {
 
   const updateTaskMutation = useMutation({
     mutationFn: async ({ taskId, updates }: { taskId: string; updates: any }) => {
-      return apiRequest(`/api/tasks/${taskId}`, {
-        method: 'PATCH',
-        body: JSON.stringify(updates),
-        headers: { 'Content-Type': 'application/json' }
-      });
+      return apiRequest('PATCH', `/api/tasks/${taskId}`, updates);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/tasks'] });
@@ -352,20 +348,33 @@ export default function Kanban() {
     return column?.statuses[0] || 'OPEN';
   };
 
+  const getContainerId = (over: any) => {
+    // Check if over.id is directly a column id
+    if (COLUMNS.some(c => c.id === String(over?.id))) {
+      return String(over.id);
+    }
+    // Otherwise, get the parent column id from sortable context
+    return over?.data?.current?.sortable?.containerId || null;
+  };
+
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
 
     if (!over) return;
 
     const taskId = active.id as string;
-    const newColumnId = over.id as string;
+    const newColumnId = getContainerId(over);
+    
+    // Guard against invalid drop targets
+    if (!newColumnId) return;
     
     const task = tasks?.find(t => t.id === taskId);
     if (!task) return;
 
     const currentColumnId = getColumnForStatus(task.status);
     
-    if (currentColumnId !== newColumnId) {
+    // Only update if the column actually changed and the new column is valid
+    if (currentColumnId !== newColumnId && COLUMNS.some(c => c.id === newColumnId)) {
       const newStatus = getStatusForColumn(newColumnId);
       updateTaskMutation.mutate({
         taskId,
