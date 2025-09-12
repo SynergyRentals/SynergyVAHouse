@@ -92,17 +92,31 @@ async function handleTaskCreated(payload: any) {
       return;
     }
     
-    const task = await storage.createTask({
+    // Populate DoD schema from playbook
+    let finalTaskData = {
       ...taskData,
       type: 'reactive',
       status: 'OPEN',
       sourceKind: 'suiteop',
       sourceId: payload.task?.id || payload.id,
       sourceUrl: payload.task?.url || payload.url
-    });
+    };
+    
+    // Get playbook and extract DoD schema
+    const playbook = await storage.getPlaybook(taskData.category);
+    if (playbook) {
+      const playbookContent = typeof playbook.content === 'string' ? 
+        JSON.parse(playbook.content) : playbook.content;
+      
+      if (playbookContent.definition_of_done) {
+        finalTaskData.dodSchema = playbookContent.definition_of_done;
+        console.log(`[Webhook DoD] Populated DoD schema for SuiteOp task:`, finalTaskData.dodSchema);
+      }
+    }
+    
+    const task = await storage.createTask(finalTaskData);
     
     // Start SLA timer if category has playbook
-    const playbook = await storage.getPlaybook(taskData.category);
     if (playbook) {
       await startSLATimer(task.id, playbook);
     }

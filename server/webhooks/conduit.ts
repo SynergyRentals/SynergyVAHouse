@@ -98,17 +98,31 @@ async function handleEscalationCreated(payload: any) {
       return;
     }
     
-    const task = await storage.createTask({
+    // Populate DoD schema from playbook
+    let finalTaskData = {
       ...taskData,
       type: 'reactive',
       status: 'OPEN',
       sourceKind: 'conduit',
       sourceId: payload.escalation?.id || payload.id,
       sourceUrl: payload.escalation?.url || payload.url
-    });
+    };
+    
+    // Get playbook and extract DoD schema
+    const playbook = await storage.getPlaybook(taskData.category);
+    if (playbook) {
+      const playbookContent = typeof playbook.content === 'string' ? 
+        JSON.parse(playbook.content) : playbook.content;
+      
+      if (playbookContent.definition_of_done) {
+        finalTaskData.dodSchema = playbookContent.definition_of_done;
+        console.log(`[Webhook DoD] Populated DoD schema for Conduit escalation:`, finalTaskData.dodSchema);
+      }
+    }
+    
+    const task = await storage.createTask(finalTaskData);
     
     // Start SLA timer (10 minutes for escalations)
-    const playbook = await storage.getPlaybook(taskData.category);
     if (playbook) {
       await startSLATimer(task.id, playbook);
     }
@@ -132,13 +146,28 @@ async function handleTaskCreated(payload: any) {
     
     if (!taskData) return;
     
-    const task = await storage.createTask({
+    // Populate DoD schema from playbook
+    let finalTaskData = {
       ...taskData,
       type: 'reactive',
       status: 'OPEN',
       sourceKind: 'conduit',
       sourceId: payload.task?.id || payload.id
-    });
+    };
+    
+    // Get playbook and extract DoD schema
+    const playbook = await storage.getPlaybook(taskData.category);
+    if (playbook) {
+      const playbookContent = typeof playbook.content === 'string' ? 
+        JSON.parse(playbook.content) : playbook.content;
+      
+      if (playbookContent.definition_of_done) {
+        finalTaskData.dodSchema = playbookContent.definition_of_done;
+        console.log(`[Webhook DoD] Populated DoD schema for Conduit task:`, finalTaskData.dodSchema);
+      }
+    }
+    
+    const task = await storage.createTask(finalTaskData);
     
     console.log(`Created task ${task.id} from Conduit task.created`);
   } catch (error) {
@@ -189,13 +218,28 @@ async function handleAIHelpRequested(payload: any) {
     
     if (!taskData) return;
     
-    const task = await storage.createTask({
+    // Populate DoD schema from playbook
+    let finalTaskData = {
       ...taskData,
       type: 'reactive',
       status: 'WAITING', // AI help requests start as waiting
       sourceKind: 'conduit',
       sourceId: payload.request?.id || payload.id
-    });
+    };
+    
+    // Get playbook and extract DoD schema
+    const playbook = await storage.getPlaybook(taskData.category);
+    if (playbook) {
+      const playbookContent = typeof playbook.content === 'string' ? 
+        JSON.parse(playbook.content) : playbook.content;
+      
+      if (playbookContent.definition_of_done) {
+        finalTaskData.dodSchema = playbookContent.definition_of_done;
+        console.log(`[Webhook DoD] Populated DoD schema for Conduit AI help:`, finalTaskData.dodSchema);
+      }
+    }
+    
+    const task = await storage.createTask(finalTaskData);
     
     await storage.createAudit({
       entity: 'task',

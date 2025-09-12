@@ -3,6 +3,61 @@ import { storage } from "../storage";
 import { insertTaskSchema } from "@shared/schema";
 import { z } from "zod";
 
+// DoD validation helper function
+async function validateTaskDoD(task: any, evidence: any = {}) {
+  try {
+    let dod = task.dodSchema;
+    
+    // If task doesn't have DoD schema but has playbook, get from playbook
+    if (!dod && task.playbookKey) {
+      const playbook = await storage.getPlaybook(task.playbookKey);
+      if (playbook) {
+        const playbookContent = typeof playbook.content === 'string' ? 
+          JSON.parse(playbook.content) : playbook.content;
+        dod = playbookContent.definition_of_done;
+      }
+    }
+    
+    // If no DoD requirements at all, it's considered valid
+    if (!dod) {
+      return { valid: true, missingFields: [], missingEvidence: [] };
+    }
+    const missingFields: string[] = [];
+    const missingEvidence: string[] = [];
+
+    // Check required fields
+    if (dod.required_fields) {
+      for (const field of dod.required_fields) {
+        if (!evidence[field] || evidence[field] === '') {
+          missingFields.push(field);
+        }
+      }
+    }
+
+    // Check required evidence
+    if (dod.required_evidence) {
+      for (const evidenceType of dod.required_evidence) {
+        if (!evidence[evidenceType] || 
+            (Array.isArray(evidence[evidenceType]) && evidence[evidenceType].length === 0)) {
+          missingEvidence.push(evidenceType);
+        }
+      }
+    }
+
+    const valid = missingFields.length === 0 && missingEvidence.length === 0;
+    
+    return {
+      valid,
+      missingFields,
+      missingEvidence,
+      dodRequirements: dod
+    };
+  } catch (error) {
+    console.error('Error validating DoD:', error);
+    return { valid: false, missingFields: [], missingEvidence: [], error: 'Validation failed' };
+  }
+}
+
 export async function registerTasksAPI(app: Express) {
   // Get tasks with filters
   app.get('/api/tasks', async (req, res) => {
@@ -179,7 +234,34 @@ export async function registerTasksAPI(app: Express) {
   // Create task
   app.post('/api/tasks', async (req, res) => {
     try {
-      const taskData = insertTaskSchema.parse(req.body);
+      let taskData = insertTaskSchema.parse(req.body);
+      
+      // Populate DoD schema if playbook exists
+      if (taskData.playbookKey) {
+        console.log('[DoD Schema] Task has playbookKey:', taskData.playbookKey);
+        const playbook = await storage.getPlaybook(taskData.playbookKey);
+        console.log('[DoD Schema] Playbook found:', playbook ? 'YES' : 'NO');
+        
+        if (playbook) {
+          const playbookContent = typeof playbook.content === 'string' ? 
+            JSON.parse(playbook.content) : playbook.content;
+          
+          console.log('[DoD Schema] Playbook content structure:', Object.keys(playbookContent));
+          console.log('[DoD Schema] Has definition_of_done:', !!playbookContent.definition_of_done);
+          
+          if (playbookContent.definition_of_done) {
+            taskData.dodSchema = playbookContent.definition_of_done;
+            console.log('[DoD Schema] DoD schema populated:', taskData.dodSchema);
+          } else {
+            console.log('[DoD Schema] No definition_of_done found in playbook');
+          }
+        } else {
+          console.log('[DoD Schema] Playbook not found in storage');
+        }
+      } else {
+        console.log('[DoD Schema] Task has no playbookKey');
+      }
+      
       const task = await storage.createTask(taskData);
       
       // Create audit log
@@ -212,11 +294,64 @@ export async function registerTasksAPI(app: Express) {
     try {
       const { id } = req.params as { id: string };
       const updates = req.body as any;
+      const { adminOverride, overrideReason, overrideUserId } = updates;
+      
+      // Remove admin override fields from updates
+      delete updates.adminOverride;
+      delete updates.overrideReason;
+      delete updates.overrideUserId;
       
       const existingTask = await storage.getTask(id);
       if (!existingTask) {
         res.status(404).json({ error: 'Task not found' });
         return;
+      }
+
+      // DoD validation when marking task as DONE
+      if (updates.status === 'DONE' && existingTask.status !== 'DONE') {
+        console.log('[DoD Debug] Starting validation for task:', existingTask.id);
+        console.log('[DoD Debug] Task playbookKey:', existingTask.playbookKey);
+        console.log('[DoD Debug] Task dodSchema:', existingTask.dodSchema);
+        console.log('[DoD Debug] Evidence provided:', updates.evidence || existingTask.evidence);
+        
+        const dodValidation = await validateTaskDoD(existingTask, updates.evidence || existingTask.evidence);
+        
+        console.log('[DoD Debug] Validation result:', dodValidation);
+        console.log('[DoD Debug] Admin override:', adminOverride);
+        
+        if (!dodValidation.valid && !adminOverride) {
+          console.log('[DoD Debug] BLOCKING completion due to DoD validation failure');
+          res.status(400).json({
+            error: 'Definition of Done requirements not met',
+            validation: dodValidation
+          });
+          return;
+        }
+        
+        console.log('[DoD Debug] ALLOWING completion - validation passed or admin override used');
+        
+        // Handle admin override
+        if (!dodValidation.valid && adminOverride) {
+          // Verify admin user has manager role
+          const adminUser = overrideUserId ? await storage.getUser(overrideUserId) : null;
+          if (!adminUser || adminUser.role !== 'manager') {
+            res.status(403).json({ error: 'Admin override requires manager role' });
+            return;
+          }
+          
+          // Log admin override
+          await storage.createAudit({
+            entity: 'task',
+            entityId: id,
+            action: 'dod_admin_override',
+            actorId: adminUser.id,
+            data: {
+              overrideReason,
+              dodValidation,
+              adminUser: { id: adminUser.id, name: adminUser.name }
+            }
+          });
+        }
       }
 
       const task = await storage.updateTask(id, updates);
@@ -286,6 +421,62 @@ export async function registerTasksAPI(app: Express) {
     } catch (error) {
       console.error('Error adding comment:', error);
       res.status(400).json({ error: 'Failed to add comment' });
+    }
+  });
+
+  // Validate DoD for a specific task
+  app.post('/api/tasks/:id/validate-dod', async (req, res) => {
+    try {
+      const { id } = req.params as { id: string };
+      const evidence = req.body as any;
+      
+      const task = await storage.getTask(id);
+      if (!task) {
+        res.status(404).json({ error: 'Task not found' });
+        return;
+      }
+
+      const validation = await validateTaskDoD(task, evidence);
+      
+      res.json(validation);
+    } catch (error) {
+      console.error('Error validating task DoD:', error);
+      res.status(500).json({ error: 'Failed to validate definition of done' });
+    }
+  });
+
+  // Update task evidence
+  app.patch('/api/tasks/:id/evidence', async (req, res) => {
+    try {
+      const { id } = req.params as { id: string };
+      const evidenceUpdate = req.body as any;
+      
+      const existingTask = await storage.getTask(id);
+      if (!existingTask) {
+        res.status(404).json({ error: 'Task not found' });
+        return;
+      }
+
+      const updatedEvidence = { 
+        ...existingTask.evidence, 
+        ...evidenceUpdate,
+        lastUpdated: new Date()
+      };
+      
+      const task = await storage.updateTask(id, { evidence: updatedEvidence });
+      
+      // Create audit log
+      await storage.createAudit({
+        entity: 'task',
+        entityId: id,
+        action: 'evidence_updated',
+        data: { evidenceUpdate }
+      });
+      
+      res.json({ success: true, evidence: updatedEvidence });
+    } catch (error) {
+      console.error('Error updating task evidence:', error);
+      res.status(500).json({ error: 'Failed to update evidence' });
     }
   });
 

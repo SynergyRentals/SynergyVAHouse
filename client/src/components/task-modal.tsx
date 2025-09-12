@@ -88,6 +88,10 @@ export function TaskModal({ task, isOpen, onClose }: TaskModalProps) {
   const [evidenceData, setEvidenceData] = useState<Record<string, any>>({});
   const [newComment, setNewComment] = useState("");
   const [isCreatingNew, setIsCreatingNew] = useState(!task);
+  const [showAdminOverride, setShowAdminOverride] = useState(false);
+  const [overrideReason, setOverrideReason] = useState('');
+  const [selectedAdminUser, setSelectedAdminUser] = useState('');
+  const [dodValidation, setDodValidation] = useState<any>(null);
   const [newTaskData, setNewTaskData] = useState({
     title: '',
     category: '',
@@ -129,6 +133,14 @@ export function TaskModal({ task, isOpen, onClose }: TaskModalProps) {
     queryKey: ['/api/playbooks', task?.playbookKey],
     enabled: !!task?.playbookKey,
   });
+
+  // Fetch all users for admin override
+  const { data: users } = useQuery<Array<{id: string, name: string, role: string}>>(
+    { queryKey: ['/api/users'] }
+  );
+
+  // Get manager users for admin override
+  const managerUsers = users?.filter(user => user.role.toLowerCase().includes('manager')) || [];
 
   const updateTaskMutation = useMutation({
     mutationFn: async (updates: Partial<Task>) => {
@@ -223,10 +235,32 @@ export function TaskModal({ task, isOpen, onClose }: TaskModalProps) {
     return { type: 'ok', text: `${minutesRemaining}m left`, class: 'text-green-600' };
   };
 
+  // Real-time DoD validation using API
+  const validateDoDMutation = useMutation({
+    mutationFn: async (evidence: any) => {
+      if (!task?.id) throw new Error('No task to validate');
+      const response = await fetch(`/api/tasks/${task.id}/validate-dod`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(evidence),
+      });
+      if (!response.ok) throw new Error('Failed to validate DoD');
+      return response.json();
+    },
+    onSuccess: (validation) => {
+      setDodValidation(validation);
+    },
+  });
+
+  // Legacy validateDoD function for compatibility
   const validateDoD = () => {
-    if (!playbook?.content.definition_of_done) return true;
+    if (dodValidation) return dodValidation.valid;
+    if (!currentTask?.dodSchema && !playbook?.content.definition_of_done) return true;
     
-    const { required_fields, required_evidence } = playbook.content.definition_of_done;
+    const dod = currentTask?.dodSchema || playbook?.content.definition_of_done;
+    if (!dod) return true;
+    
+    const { required_fields = [], required_evidence = [] } = dod;
     
     for (const field of required_fields) {
       if (!evidenceData[field] || evidenceData[field] === '') {
@@ -243,16 +277,35 @@ export function TaskModal({ task, isOpen, onClose }: TaskModalProps) {
     return true;
   };
 
+  // Update evidence and validate in real-time
+  const updateEvidence = (key: string, value: any) => {
+    const newEvidenceData = { ...evidenceData, [key]: value };
+    setEvidenceData(newEvidenceData);
+    
+    // Trigger real-time validation
+    if (task?.id) {
+      validateDoDMutation.mutate(newEvidenceData);
+    }
+  };
+
   const handleStatusChange = (newStatus: string) => {
-    if (newStatus === 'DONE' && playbook?.content.definition_of_done) {
+    if (newStatus === 'DONE' && (currentTask?.dodSchema || playbook?.content.definition_of_done)) {
       setIsCompleting(true);
+      // Initialize evidence data from existing task evidence
+      if (currentTask?.evidence) {
+        setEvidenceData(currentTask.evidence);
+      }
+      // Trigger initial validation
+      if (task?.id) {
+        validateDoDMutation.mutate(currentTask?.evidence || {});
+      }
     } else {
       updateTaskMutation.mutate({ status: newStatus });
     }
   };
 
   const handleCompleteWithEvidence = () => {
-    if (!validateDoD()) {
+    if (!validateDoD() && !showAdminOverride) {
       toast({ 
         title: "Missing required evidence", 
         description: "Please complete all required fields and evidence before marking as done.",
@@ -261,11 +314,40 @@ export function TaskModal({ task, isOpen, onClose }: TaskModalProps) {
       return;
     }
     
-    updateTaskMutation.mutate({ 
+    // Prepare update data
+    const updateData: any = {
       status: 'DONE',
       evidence: { ...task?.evidence, ...evidenceData, completedAt: new Date() }
-    });
+    };
+    
+    // Add admin override data if needed
+    if (showAdminOverride && !validateDoD()) {
+      if (!overrideReason.trim()) {
+        toast({ 
+          title: "Override reason required", 
+          description: "Please provide a reason for the admin override.",
+          variant: "destructive" 
+        });
+        return;
+      }
+      
+      if (!selectedAdminUser) {
+        toast({ 
+          title: "Admin user required", 
+          description: "Please select a manager to authorize the override.",
+          variant: "destructive" 
+        });
+        return;
+      }
+      
+      updateData.adminOverride = true;
+      updateData.overrideReason = overrideReason;
+      updateData.overrideUserId = selectedAdminUser;
+    }
+    
+    updateTaskMutation.mutate(updateData);
     setIsCompleting(false);
+    setShowAdminOverride(false);
     onClose();
   };
 
@@ -450,77 +532,219 @@ export function TaskModal({ task, isOpen, onClose }: TaskModalProps) {
               </Select>
             </div>
 
-            {/* Definition of Done Modal */}
-            {isCompleting && playbook?.content.definition_of_done && (
-              <div className="border border-border rounded-lg p-4 bg-muted/50">
-                <h4 className="font-medium text-foreground mb-4 flex items-center space-x-2">
-                  <CheckCircle className="w-5 h-5" />
-                  <span>Complete Task - Definition of Done</span>
-                </h4>
+            {/* Enhanced Definition of Done Modal */}
+            {isCompleting && (currentTask?.dodSchema || playbook?.content.definition_of_done) && (
+              <div className="border border-border rounded-lg p-6 bg-muted/50 space-y-6">
+                <div className="flex items-center justify-between">
+                  <h4 className="font-medium text-foreground flex items-center space-x-2">
+                    <CheckCircle className="w-5 h-5" />
+                    <span>Complete Task - Definition of Done</span>
+                  </h4>
+                  {dodValidation && (
+                    <div className={`flex items-center space-x-2 text-sm ${
+                      dodValidation.valid ? 'text-green-600' : 'text-red-600'
+                    }`}>
+                      {dodValidation.valid ? '✓ All requirements met' : `⚠ ${(dodValidation.missingFields?.length || 0) + (dodValidation.missingEvidence?.length || 0)} missing`}
+                    </div>
+                  )}
+                </div>
                 
-                <div className="space-y-4">
-                  {/* Required Fields */}
-                  {playbook.content.definition_of_done.required_fields.length > 0 && (
-                    <div>
-                      <Label className="text-sm font-medium">Required Fields</Label>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
-                        {playbook.content.definition_of_done.required_fields.map((field) => (
-                          <div key={field}>
-                            <Label className="text-sm">{field.replace(/_/g, ' ')}</Label>
-                            <Input
-                              value={evidenceData[field] || ''}
-                              onChange={(e) => setEvidenceData(prev => ({ ...prev, [field]: e.target.value }))}
-                              placeholder={`Enter ${field.replace(/_/g, ' ')}`}
-                              data-testid={`input-${field}`}
-                            />
+                {/* DoD Requirements from task dodSchema or playbook */}
+                {(() => {
+                  const dod = currentTask?.dodSchema || playbook?.content.definition_of_done;
+                  if (!dod) return null;
+                  
+                  return (
+                    <div className="space-y-6">
+                      {/* Required Fields */}
+                      {dod.required_fields && dod.required_fields.length > 0 && (
+                        <div>
+                          <Label className="text-sm font-medium mb-3 block">Required Fields</Label>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {dod.required_fields.map((field) => {
+                              const isFieldMissing = dodValidation?.missingFields?.includes(field);
+                              return (
+                                <div key={field} className={`space-y-2 ${isFieldMissing ? 'border-l-2 border-red-400 pl-3' : ''}`}>
+                                  <Label className={`text-sm flex items-center space-x-2 ${
+                                    isFieldMissing ? 'text-red-600' : 'text-foreground'
+                                  }`}>
+                                    {isFieldMissing ? '⚠' : evidenceData[field] ? '✓' : '○'}
+                                    <span>{field.replace(/_/g, ' ')}</span>
+                                  </Label>
+                                  <Input
+                                    value={evidenceData[field] || ''}
+                                    onChange={(e) => updateEvidence(field, e.target.value)}
+                                    placeholder={`Enter ${field.replace(/_/g, ' ')}`}
+                                    className={isFieldMissing ? 'border-red-400' : ''}
+                                    data-testid={`input-dod-${field}`}
+                                  />
+                                </div>
+                              );
+                            })}
                           </div>
-                        ))}
+                        </div>
+                      )}
+
+                      {/* Required Evidence */}
+                      {dod.required_evidence && dod.required_evidence.length > 0 && (
+                        <div>
+                          <Label className="text-sm font-medium mb-3 block">Required Evidence</Label>
+                          <div className="space-y-4">
+                            {dod.required_evidence.map((evidenceType) => {
+                              const isEvidenceMissing = dodValidation?.missingEvidence?.includes(evidenceType);
+                              const evidenceValue = evidenceData[evidenceType];
+                              
+                              return (
+                                <div key={evidenceType} className={`space-y-2 ${isEvidenceMissing ? 'border-l-2 border-red-400 pl-3' : ''}`}>
+                                  <Label className={`text-sm flex items-center space-x-2 ${
+                                    isEvidenceMissing ? 'text-red-600' : 'text-foreground'
+                                  }`}>
+                                    {isEvidenceMissing ? '⚠' : evidenceValue ? '✓' : '○'}
+                                    <span>{evidenceType.replace(/_/g, ' ')}</span>
+                                  </Label>
+                                  <div className="space-y-2">
+                                    <div className="flex items-center space-x-2">
+                                      <Input
+                                        type="url"
+                                        value={evidenceValue?.url || ''}
+                                        onChange={(e) => updateEvidence(evidenceType, { 
+                                          ...evidenceValue, 
+                                          url: e.target.value 
+                                        })}
+                                        placeholder={`URL for ${evidenceType.replace(/_/g, ' ')}`}
+                                        className={isEvidenceMissing ? 'border-red-400' : ''}
+                                        data-testid={`input-evidence-${evidenceType}-url`}
+                                      />
+                                      <Button variant="outline" size="sm">
+                                        <Upload className="w-4 h-4" />
+                                      </Button>
+                                    </div>
+                                    <Textarea
+                                      value={evidenceValue?.notes || ''}
+                                      onChange={(e) => updateEvidence(evidenceType, { 
+                                        ...evidenceValue, 
+                                        notes: e.target.value 
+                                      })}
+                                      placeholder={`Notes for ${evidenceType.replace(/_/g, ' ')}`}
+                                      rows={2}
+                                      className={isEvidenceMissing ? 'border-red-400' : ''}
+                                      data-testid={`textarea-evidence-${evidenceType}-notes`}
+                                    />
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+
+                {/* Validation Status & Admin Override */}
+                <div className="space-y-4">
+                  {dodValidation && !dodValidation.valid && (
+                    <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
+                      <div className="flex items-start space-x-3">
+                        <AlertTriangle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+                        <div className="flex-1">
+                          <h5 className="font-medium text-red-800 dark:text-red-300 mb-2">Requirements Not Met</h5>
+                          <div className="space-y-1 text-sm text-red-700 dark:text-red-400">
+                            {dodValidation.missingFields?.map((field) => (
+                              <div key={field}>• Missing field: {field.replace(/_/g, ' ')}</div>
+                            ))}
+                            {dodValidation.missingEvidence?.map((evidence) => (
+                              <div key={evidence}>• Missing evidence: {evidence.replace(/_/g, ' ')}</div>
+                            ))}
+                          </div>
+                          {managerUsers.length > 0 && (
+                            <Button 
+                              variant="outline" 
+                              size="sm" 
+                              className="mt-3"
+                              onClick={() => setShowAdminOverride(!showAdminOverride)}
+                              data-testid="button-toggle-admin-override"
+                            >
+                              {showAdminOverride ? 'Cancel Override' : 'Admin Override'}
+                            </Button>
+                          )}
+                        </div>
                       </div>
                     </div>
                   )}
 
-                  {/* Required Evidence */}
-                  {playbook.content.definition_of_done.required_evidence.length > 0 && (
-                    <div>
-                      <Label className="text-sm font-medium">Required Evidence</Label>
-                      <div className="space-y-3 mt-2">
-                        {playbook.content.definition_of_done.required_evidence.map((evidence) => (
-                          <div key={evidence}>
-                            <Label className="text-sm">{evidence.replace(/_/g, ' ')}</Label>
-                            <div className="flex items-center space-x-2">
-                              <Input
-                                type="url"
-                                value={evidenceData[evidence] || ''}
-                                onChange={(e) => setEvidenceData(prev => ({ ...prev, [evidence]: e.target.value }))}
-                                placeholder="URL or file reference"
-                                data-testid={`input-evidence-${evidence}`}
-                              />
-                              <Button variant="outline" size="sm">
-                                <Upload className="w-4 h-4" />
-                              </Button>
-                            </div>
-                          </div>
-                        ))}
+                  {/* Admin Override Panel */}
+                  {showAdminOverride && (
+                    <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4 space-y-4">
+                      <div className="flex items-center space-x-2">
+                        <AlertTriangle className="w-5 h-5 text-yellow-600" />
+                        <h5 className="font-medium text-yellow-800 dark:text-yellow-300">Manager Override Required</h5>
                       </div>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <Label className="text-sm font-medium">Select Manager</Label>
+                          <Select value={selectedAdminUser} onValueChange={setSelectedAdminUser}>
+                            <SelectTrigger data-testid="select-admin-user">
+                              <SelectValue placeholder="Choose manager..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {managerUsers.map((user) => (
+                                <SelectItem key={user.id} value={user.id}>
+                                  {user.name} ({user.role})
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        
+                        <div>
+                          <Label className="text-sm font-medium">Override Reason *</Label>
+                          <Input
+                            value={overrideReason}
+                            onChange={(e) => setOverrideReason(e.target.value)}
+                            placeholder="Reason for override..."
+                            data-testid="input-override-reason"
+                          />
+                        </div>
+                      </div>
+                      
+                      <p className="text-sm text-yellow-700 dark:text-yellow-400">
+                        ⚠ This will complete the task without meeting DoD requirements and will be logged in the audit trail.
+                      </p>
                     </div>
                   )}
                 </div>
 
-                <div className="flex items-center justify-between mt-6">
+                {/* Action Buttons */}
+                <div className="flex items-center justify-between pt-4 border-t border-border">
                   <div className="flex items-center space-x-2 text-sm text-muted-foreground">
-                    <AlertTriangle className="w-4 h-4" />
-                    <span>Complete all required fields to mark as done</span>
+                    {validateDoDMutation.isPending ? (
+                      <><div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div> Validating...</>
+                    ) : dodValidation?.valid ? (
+                      <><CheckCircle className="w-4 h-4 text-green-600" /> All requirements completed</>
+                    ) : (
+                      <><AlertTriangle className="w-4 h-4" /> Complete requirements or use admin override</>
+                    )}
                   </div>
                   <div className="flex items-center space-x-3">
-                    <Button variant="outline" onClick={() => setIsCompleting(false)}>
+                    <Button variant="outline" onClick={() => {
+                      setIsCompleting(false);
+                      setShowAdminOverride(false);
+                      setOverrideReason('');
+                      setSelectedAdminUser('');
+                    }}>
                       Cancel
                     </Button>
                     <Button 
                       onClick={handleCompleteWithEvidence}
-                      disabled={!validateDoD()}
+                      disabled={!validateDoD() && (!showAdminOverride || !overrideReason || !selectedAdminUser)}
                       data-testid="button-complete-task"
+                      className={showAdminOverride && !validateDoD() ? 'bg-yellow-600 hover:bg-yellow-700' : ''}
                     >
-                      Mark Complete
+                      {updateTaskMutation.isPending ? 'Completing...' : 
+                       showAdminOverride && !validateDoD() ? 'Complete with Override' : 
+                       'Mark Complete'}
                     </Button>
                   </div>
                 </div>
