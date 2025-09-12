@@ -1,6 +1,7 @@
 import type { App } from '@slack/bolt';
 import { storage } from '../storage';
 import { satisfyFollowUp } from '../services/followup';
+import { identifyCriticalIssues } from '../services/metrics';
 
 export function setupActions(app: App) {
   // Complete follow-up action
@@ -449,7 +450,7 @@ export function setupActions(app: App) {
       }
       
       // Complete the follow-up
-      await completeFollowUp(taskId, 'Marked complete via Slack', user.slackId);
+      await satisfyFollowUp(taskId, 'Marked complete via Slack');
       
       // Send confirmation to user
       await client.chat.postMessage({
@@ -606,6 +607,80 @@ export function setupActions(app: App) {
       console.log(`Follow-up ${taskId} deadline extended by ${user.name}`);
     } catch (error) {
       console.error('Error extending follow-up deadline:', error);
+    }
+  });
+
+  // Review critical issue action
+  app.action('review_critical_issue', async ({ action, ack, client, body }) => {
+    await ack();
+    
+    try {
+      const issueType = (action as any).value;
+      const user = await storage.getUserBySlackId((body as any).user.id);
+      
+      if (!user) return;
+      
+      // Get critical issues for this type
+      const allTasks = await storage.getTasks();
+      const criticalIssues = await identifyCriticalIssues(allTasks, new Date());
+      const issue = criticalIssues.find(i => i.type === issueType);
+      
+      if (!issue) {
+        await client.chat.postMessage({
+          channel: user.slackId,
+          text: '❌ Critical issue not found or may have been resolved.'
+        });
+        return;
+      }
+      
+      const blocks = [
+        {
+          type: 'header',
+          text: {
+            type: 'plain_text',
+            text: `🚨 Critical Issue Review: ${issue.type.replace('_', ' ').toUpperCase()}`
+          }
+        },
+        {
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text: `*Severity:* ${issue.severity}\n*Count:* ${issue.count} tasks\n*Description:* ${issue.description}`
+          }
+        },
+        {
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text: '*Affected Tasks:*'
+          }
+        }
+      ];
+      
+      // Add task details
+      for (const task of issue.tasks.slice(0, 5)) {
+        blocks.push({
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text: `• *${task.title}*\n  Status: ${task.status} | Category: ${task.category}\n  ${task.dueAt ? `Due: ${new Date(task.dueAt).toLocaleDateString()}` : 'No due date'}`
+          }
+        });
+      }
+      
+      await client.views.open({
+        trigger_id: (body as any).trigger_id,
+        view: {
+          type: 'modal',
+          title: {
+            type: 'plain_text',
+            text: 'Critical Issue Details'
+          },
+          blocks
+        }
+      });
+    } catch (error) {
+      console.error('Error in review_critical_issue action:', error);
     }
   });
 }

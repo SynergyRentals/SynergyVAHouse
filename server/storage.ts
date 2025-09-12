@@ -76,7 +76,6 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getTasks(filters?: any): Promise<Task[]> {
-    let query = db.select().from(tasks);
     const conditions = [];
     
     if (filters?.status) {
@@ -99,6 +98,7 @@ export class DatabaseStorage implements IStorage {
       conditions.push(eq(tasks.sourceId, filters.sourceId));
     }
     
+    let query = db.select().from(tasks);
     if (conditions.length > 0) {
       query = query.where(and(...conditions));
     }
@@ -210,17 +210,18 @@ export class DatabaseStorage implements IStorage {
 
   // Metrics
   async getMetrics(startDate: Date, endDate: Date, userId?: string): Promise<any[]> {
-    let query = db.select().from(metricRollups)
-      .where(and(
-        gte(metricRollups.day, startDate),
-        lte(metricRollups.day, endDate)
-      ));
+    const conditions = [
+      gte(metricRollups.day, startDate),
+      lte(metricRollups.day, endDate)
+    ];
     
     if (userId) {
-      query = query.where(eq(metricRollups.userId, userId));
+      conditions.push(eq(metricRollups.userId, userId));
     }
     
-    return await query.orderBy(metricRollups.day);
+    return await db.select().from(metricRollups)
+      .where(and(...conditions))
+      .orderBy(metricRollups.day);
   }
 
   async createMetricRollup(rollup: any): Promise<void> {

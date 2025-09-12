@@ -1,7 +1,7 @@
 import cron from 'node-cron';
 import { checkSLABreaches, sendSLANudge } from '../services/sla';
 import { checkOverdueFollowUps } from '../services/followup';
-import { sendDailyVABriefings, sendPMVABriefings, sendManagerDigest } from '../services/briefings';
+import { sendDailyVABriefings, sendPMVABriefings, sendManagerDigest, sendWeeklyManagerSummary } from '../services/briefings';
 import { generateDailyMetrics } from '../services/metrics';
 import { storage } from '../storage';
 
@@ -44,23 +44,30 @@ export function startScheduler() {
     }
   });
   
-  // AM briefings for VAs - 09:00 Manila time (weekdays)
-  cron.schedule('0 9 * * 1-5', async () => {
+  // AM briefings for VAs - 08:00 Manila time (weekdays)
+  cron.schedule('0 8 * * 1-5', async () => {
     await sendDailyVABriefings();
   }, {
     timezone: 'Asia/Manila'
   });
   
-  // PM briefings for VAs - 17:30 Manila time (weekdays)
-  cron.schedule('30 17 * * 1-5', async () => {
+  // PM briefings for VAs - 18:00 Manila time (weekdays)
+  cron.schedule('0 18 * * 1-5', async () => {
     await sendPMVABriefings();
   }, {
     timezone: 'Asia/Manila'
   });
   
-  // Manager digest - 09:15 Chicago time (weekdays)
-  cron.schedule('15 9 * * 1-5', async () => {
+  // Manager daily digest - 09:00 Chicago time (weekdays)
+  cron.schedule('0 9 * * 1-5', async () => {
     await sendManagerDigest();
+  }, {
+    timezone: 'America/Chicago'
+  });
+  
+  // Manager weekly summary - Monday 09:00 Chicago time  
+  cron.schedule('0 9 * * 1', async () => {
+    await sendWeeklyManagerSummary();
   }, {
     timezone: 'America/Chicago'
   });

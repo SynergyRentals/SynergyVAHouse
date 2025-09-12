@@ -665,3 +665,85 @@ function formatDueDate(dueDate: Date): string {
     return `on ${dueDate.toLocaleDateString()} at ${dueDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`;
   }
 }
+
+// Extension function for deadline management
+export async function extendFollowUpDeadline(taskId: string, newDueDate: Date, reason: string, userSlackId: string) {
+  try {
+    const task = await storage.getTask(taskId);
+    if (!task) {
+      console.error(`Task ${taskId} not found for deadline extension`);
+      return;
+    }
+
+    await storage.updateTask(taskId, {
+      dueAt: newDueDate,
+      evidence: {
+        ...task.evidence as any,
+        deadlineExtended: true,
+        extensionReason: reason,
+        extendedBy: userSlackId,
+        extendedAt: new Date()
+      }
+    });
+
+    await storage.createAudit({
+      entity: 'task',
+      entityId: taskId,
+      action: 'followup_deadline_extended',
+      actorId: userSlackId,
+      data: {
+        originalDue: task.dueAt,
+        newDue: newDueDate,
+        reason
+      }
+    });
+
+    console.log(`Follow-up ${taskId} deadline extended to ${newDueDate.toISOString()}`);
+  } catch (error) {
+    console.error('Error extending follow-up deadline:', error);
+  }
+}
+
+// Manual follow-up creation
+export async function createManualFollowUp(data: any) {
+  try {
+    const user = await storage.getUserBySlackId(data.userSlackId);
+    if (!user) {
+      console.error('User not found for manual follow-up creation');
+      return null;
+    }
+
+    const dueDate = new Date(data.dueDate || Date.now() + 24 * 60 * 60 * 1000); // Default 1 day
+    
+    const task = await storage.createTask({
+      title: data.title || 'Manual Follow-up',
+      description: data.description || '',
+      category: 'follow_up',
+      type: 'action_item',
+      status: 'OPEN',
+      priority: data.priority || 2,
+      assigneeId: data.assigneeId || user.id,
+      dueAt: dueDate,
+      sourceUrl: data.sourceUrl,
+      evidence: {
+        manuallyCreated: true,
+        createdBy: data.userSlackId,
+        originalRequest: data.description
+      }
+    });
+
+    await storage.createAudit({
+      entity: 'task',
+      entityId: task.id,
+      action: 'followup_manually_created',
+      actorId: user.id,
+      data: { source: 'manual_creation', dueDate }
+    });
+
+    console.log(`Manual follow-up created: ${task.id}`);
+    return task;
+  } catch (error) {
+    console.error('Error creating manual follow-up:', error);
+    return null;
+  }
+}
