@@ -476,6 +476,7 @@ export default function Dashboard() {
 
       {/* Task Modal for creating new tasks */}
       <TaskModal 
+        task={null}
         isOpen={isCreatingTask}
         onClose={() => setIsCreatingTask(false)}
       />

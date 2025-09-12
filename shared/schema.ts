@@ -3,6 +3,7 @@ import { pgTable, text, varchar, timestamp, integer, jsonb, boolean, pgEnum, ind
 import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
+import type { InferSelectModel, InferInsertModel } from "drizzle-orm";
 
 export const taskTypeEnum = pgEnum('task_type', ['daily', 'weekly', 'reactive', 'project', 'follow_up']);
 export const taskStatusEnum = pgEnum('task_status', ['OPEN', 'IN_PROGRESS', 'WAITING', 'BLOCKED', 'DONE']);
@@ -36,7 +37,7 @@ export const users = pgTable("users", {
   preferences: jsonb("preferences"), // {theme: string, notifications: boolean, etc.}
   isActive: boolean("is_active").notNull().default(true),
   department: text("department"),
-  managerId: varchar("manager_id").references(() => users.id),
+  managerId: varchar("manager_id"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -48,28 +49,28 @@ export const tasks = pgTable("tasks", {
   category: text("category").notNull(),
   status: taskStatusEnum("status").notNull().default('OPEN'),
   priority: integer("priority").notNull().default(3), // 1 high, 5 low
-  assigneeId: varchar("assignee_id").references(() => users.id),
+  assigneeId: varchar("assignee_id"),
   dueAt: timestamp("due_at"),
   slaAt: timestamp("sla_at"),
   sourceKind: text("source_kind"), // slack|conduit|suiteop|manual
   sourceId: text("source_id"),
   sourceUrl: text("source_url"),
-  playbookKey: text("playbook_key").references(() => playbooks.key),
+  playbookKey: text("playbook_key"),
   dodSchema: jsonb("dod_schema"),
   evidence: jsonb("evidence"), // [{type, url, note}]
   followUpMetadata: jsonb("followup_metadata"), // {originalMessage, promiseText, extractedTimeframe, threadContext, participants}
   approvals: jsonb("approvals"), // [{bySlackId, at, decision}]
-  createdBy: text("created_by").references(() => users.id),
+  createdBy: text("created_by"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-  projectId: varchar("project_id").references(() => projects.id),
+  projectId: varchar("project_id"),
 });
 
 export const projects = pgTable("projects", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   title: text("title").notNull(),
   scope: text("scope").notNull(),
-  ownerId: varchar("owner_id").references(() => users.id),
+  ownerId: varchar("owner_id"),
   status: text("status").notNull().default("active"),
   view: text("view").notNull().default("kanban"),
   startAt: timestamp("start_at"),
@@ -80,8 +81,8 @@ export const projects = pgTable("projects", {
 
 export const comments = pgTable("comments", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  taskId: varchar("task_id").notNull().references(() => tasks.id, { onDelete: 'cascade' }),
-  authorId: varchar("author_id").references(() => users.id),
+  taskId: varchar("task_id").notNull(),
+  authorId: varchar("author_id"),
   body: text("body").notNull(),
   slackTs: text("slack_ts"),
   createdAt: timestamp("created_at").defaultNow(),
@@ -152,8 +153,8 @@ export const permissions = pgTable("permissions", {
 
 export const rolePermissions = pgTable("role_permissions", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  roleId: varchar("role_id").notNull().references(() => roles.id, { onDelete: 'cascade' }),
-  permissionId: varchar("permission_id").notNull().references(() => permissions.id, { onDelete: 'cascade' }),
+  roleId: varchar("role_id").notNull(),
+  permissionId: varchar("permission_id").notNull(),
   createdAt: timestamp("created_at").defaultNow(),
 }, (table) => [
   // SECURITY: Ensure unique combinations of role + permission - prevent duplicate assignments
@@ -162,9 +163,9 @@ export const rolePermissions = pgTable("role_permissions", {
 
 export const userRoles = pgTable("user_roles", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
-  roleId: varchar("role_id").notNull().references(() => roles.id, { onDelete: 'cascade' }),
-  assignedBy: varchar("assigned_by").references(() => users.id),
+  userId: varchar("user_id").notNull(),
+  roleId: varchar("role_id").notNull(),
+  assignedBy: varchar("assigned_by"),
   assignedAt: timestamp("assigned_at").defaultNow(),
   createdAt: timestamp("created_at").defaultNow(),
 }, (table) => [
@@ -324,32 +325,41 @@ export const insertUserRoleSchema = createInsertSchema(userRoles).omit({
   createdAt: true,
 });
 
-// Types
+// Types - Using proper Drizzle inference
+export type User = InferSelectModel<typeof users>;
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type UpsertUser = z.infer<typeof upsertUserSchema>;
-export type User = typeof users.$inferSelect;
+
+export type Task = InferSelectModel<typeof tasks>;
 export type InsertTask = z.infer<typeof insertTaskSchema>;
-export type Task = typeof tasks.$inferSelect;
+
+export type Project = InferSelectModel<typeof projects>;
 export type InsertProject = z.infer<typeof insertProjectSchema>;
-export type Project = typeof projects.$inferSelect;
+
+export type Comment = InferSelectModel<typeof comments>;
 export type InsertComment = z.infer<typeof insertCommentSchema>;
-export type Comment = typeof comments.$inferSelect;
+
+export type Audit = InferSelectModel<typeof audits>;
 export type InsertAudit = z.infer<typeof insertAuditSchema>;
-export type Audit = typeof audits.$inferSelect;
+
+export type Playbook = InferSelectModel<typeof playbooks>;
 export type InsertPlaybook = z.infer<typeof insertPlaybookSchema>;
-export type Playbook = typeof playbooks.$inferSelect;
+
+export type AISuggestion = InferSelectModel<typeof aiSuggestions>;
 export type InsertAISuggestion = z.infer<typeof insertAISuggestionSchema>;
-export type AISuggestion = typeof aiSuggestions.$inferSelect;
 
 // RBAC Types
+export type Role = InferSelectModel<typeof roles>;
 export type InsertRole = z.infer<typeof insertRoleSchema>;
-export type Role = typeof roles.$inferSelect;
+
+export type Permission = InferSelectModel<typeof permissions>;
 export type InsertPermission = z.infer<typeof insertPermissionSchema>;
-export type Permission = typeof permissions.$inferSelect;
+
+export type RolePermission = InferSelectModel<typeof rolePermissions>;
 export type InsertRolePermission = z.infer<typeof insertRolePermissionSchema>;
-export type RolePermission = typeof rolePermissions.$inferSelect;
+
+export type UserRole = InferSelectModel<typeof userRoles>;
 export type InsertUserRole = z.infer<typeof insertUserRoleSchema>;
-export type UserRole = typeof userRoles.$inferSelect;
 
 // Permission computation types
 export interface ComputedPermission {

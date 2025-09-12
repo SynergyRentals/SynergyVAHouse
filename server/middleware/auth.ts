@@ -1,25 +1,16 @@
 import type { Request, Response, NextFunction } from 'express';
 import { storage } from '../storage';
+import type { User as AppUser } from '@shared/schema';
 
-// Extended request interface with user context
-export interface AuthenticatedRequest extends Request {
-  user?: {
-    id: string;
-    slackId?: string; // Optional for web users
-    name: string;
-    role: string;
-    email?: string;
-    authType?: 'slack' | 'replit' | 'dev-fallback'; // Track auth source
-  };
-  slackUserId?: string; // Set by validateSlackSignature middleware for verified Slack requests
-}
+// Re-export for backward compatibility
+export type AuthenticatedRequest = Request;
 
 /**
  * Secure authentication middleware - PRODUCTION SAFE
  * Only accepts: (1) Valid Replit Auth session OR (2) Slack-signed requests (via dedicated middleware)
  * NO header-based auth bypasses allowed in production
  */
-export async function requireAuth(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+export async function requireAuth(req: Request, res: Response, next: NextFunction) {
   try {
     let user;
     let authType: 'slack' | 'replit' | 'dev-fallback' = 'replit';
@@ -112,13 +103,9 @@ export async function requireAuth(req: AuthenticatedRequest, res: Response, next
       return;
     }
 
-    // Add user to request context
+    // Add user to request context with authType
     req.user = {
-      id: user.id,
-      slackId: user.slackId || undefined,
-      name: user.name,
-      role: user.role, // Legacy role field - will be replaced by RBAC
-      email: user.email || undefined,
+      ...user,
       authType
     };
 
@@ -154,7 +141,7 @@ export async function requireAuth(req: AuthenticatedRequest, res: Response, next
 /**
  * Authorization middleware for manager-only operations
  */
-export function requireManagerRole(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+export function requireManagerRole(req: Request, res: Response, next: NextFunction) {
   if (!req.user) {
     res.status(401).json({ error: 'Authentication required' });
     return;
@@ -174,7 +161,7 @@ export function requireManagerRole(req: AuthenticatedRequest, res: Response, nex
 /**
  * Extract authenticated user ID from request
  */
-export function getAuthenticatedUserId(req: AuthenticatedRequest): string | undefined {
+export function getAuthenticatedUserId(req: Request): string | undefined {
   return req.user?.id;
 }
 
@@ -182,7 +169,7 @@ export function getAuthenticatedUserId(req: AuthenticatedRequest): string | unde
  * Middleware specifically for Replit Auth protected routes
  * Requires valid session authentication
  */
-export function requireReplitAuth(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+export function requireReplitAuth(req: Request, res: Response, next: NextFunction) {
   if (!req.isAuthenticated || !req.isAuthenticated()) {
     res.status(401).json({ 
       error: 'Authentication required',
@@ -207,7 +194,7 @@ export function requireReplitAuth(req: AuthenticatedRequest, res: Response, next
  * Validate Slack signature for webhook requests - PRODUCTION READY
  * This middleware MUST be applied to ALL Slack webhook endpoints
  */
-export function validateSlackSignature(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+export function validateSlackSignature(req: Request, res: Response, next: NextFunction) {
   const crypto = require('crypto');
   
   try {
