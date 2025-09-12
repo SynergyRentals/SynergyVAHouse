@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useAuth } from "@/hooks/useAuth";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -51,6 +52,7 @@ export default function Dashboard() {
   const [viewMode, setViewMode] = useState<'va' | 'manager'>('va');
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [isCreatingTask, setIsCreatingTask] = useState(false);
+  const { user, isLoading: authLoading, isAuthenticated } = useAuth();
 
   const { data: stats, isLoading: statsLoading } = useQuery<DashboardStats>({
     queryKey: ['/api/tasks/stats'],
@@ -92,12 +94,30 @@ export default function Dashboard() {
     return { type: 'ok', text: '✅ On track', class: 'text-green-600' };
   };
 
-  if (statsLoading || tasksLoading) {
+  if (authLoading || statsLoading || tasksLoading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
           <p className="text-muted-foreground">Loading dashboard...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center">
+          <h1 className="text-2xl font-bold mb-4">Authentication Required</h1>
+          <p className="text-muted-foreground mb-6">Please log in to access the VA Operations Hub</p>
+          <a 
+            href="/api/login" 
+            className="inline-flex items-center px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
+            data-testid="button-login"
+          >
+            Log in with Replit
+          </a>
         </div>
       </div>
     );
@@ -122,13 +142,30 @@ export default function Dashboard() {
           <div className="mb-6 p-4 bg-sidebar-accent rounded-lg">
             <div className="flex items-center space-x-3">
               <div className="w-8 h-8 bg-sidebar-primary rounded-full flex items-center justify-center">
-                <span className="text-sidebar-primary-foreground text-sm font-medium">J</span>
+                <span className="text-sidebar-primary-foreground text-sm font-medium">
+                  {user?.name?.charAt(0) || user?.firstName?.charAt(0) || 'U'}
+                </span>
               </div>
               <div>
-                <div className="text-sidebar-foreground font-medium text-sm">@Jorel</div>
-                <div className="text-sidebar-foreground/60 text-xs">Lead EA & Data</div>
-                <div className="text-sidebar-foreground/60 text-xs">Manila: {new Date().toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' })}</div>
+                <div className="text-sidebar-foreground font-medium text-sm" data-testid="text-username">
+                  {user?.name || `${user?.firstName} ${user?.lastName}` || 'User'}
+                </div>
+                <div className="text-sidebar-foreground/60 text-xs" data-testid="text-user-role">
+                  {user?.role || 'Team Member'} {user?.department && `• ${user?.department}`}
+                </div>
+                <div className="text-sidebar-foreground/60 text-xs">
+                  Manila: {new Date().toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' })}
+                </div>
               </div>
+            </div>
+            <div className="mt-3 pt-3 border-t border-sidebar-border">
+              <a 
+                href="/api/logout" 
+                className="text-xs text-sidebar-foreground/80 hover:text-sidebar-foreground transition-colors"
+                data-testid="link-logout"
+              >
+                Log out
+              </a>
             </div>
           </div>
 
