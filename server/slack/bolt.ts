@@ -1,12 +1,12 @@
-import App from '@slack/bolt';
-import type { Express } from 'express';
+import type { Express, Request, Response } from 'express';
 import { setupAppHome } from './app_home';
 import { setupCommands } from './commands';
 import { setupActions } from './actions';
 import { setupModals } from './modals';
 import { setupMessageEvents } from './message_events';
 
-let slackApp: App;
+let slackApp: any;
+let App: any;
 let botUserId: string | null = null;
 
 export async function initializeSlackApp(app: Express) {
@@ -15,6 +15,10 @@ export async function initializeSlackApp(app: Express) {
     return;
   }
 
+  // Dynamic import to handle ES module compatibility
+  const slackBolt = await import('@slack/bolt');
+  App = slackBolt.App;
+
   slackApp = new App({
     token: process.env.SLACK_BOT_TOKEN,
     signingSecret: process.env.SLACK_SIGNING_SECRET,
@@ -22,7 +26,7 @@ export async function initializeSlackApp(app: Express) {
       {
         path: '/slack/events',
         method: ['POST'],
-        handler: (req, res) => {
+        handler: (req: Request, res: Response) => {
           // Handle Slack events
           res.writeHead(200);
           res.end('OK');
@@ -39,7 +43,7 @@ export async function initializeSlackApp(app: Express) {
   setupMessageEvents(slackApp);
 
   // Register Slack routes with Express
-  app.post('/slack/events', async (req, res) => {
+  app.post('/slack/events', async (req: Request, res: Response) => {
     const body = req.body as any;
     
     // Handle URL verification
@@ -52,7 +56,7 @@ export async function initializeSlackApp(app: Express) {
     res.json({ ok: true });
   });
 
-  app.post('/slack/interactive', async (req, res) => {
+  app.post('/slack/interactive', async (req: Request, res: Response) => {
     // Handle interactive components
     res.json({ ok: true });
   });
@@ -70,7 +74,7 @@ export async function initializeSlackApp(app: Express) {
   }
 }
 
-export function getSlackApp(): App {
+export function getSlackApp(): any {
   return slackApp;
 }
 
