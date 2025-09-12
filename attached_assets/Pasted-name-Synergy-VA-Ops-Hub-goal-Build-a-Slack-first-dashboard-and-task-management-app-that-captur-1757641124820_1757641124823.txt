@@ -1,0 +1,424 @@
+name: Synergy VA Ops Hub
+goal: >
+  Build a Slack-first dashboard and task management app that captures all VA work
+  (daily/weekly checklists, reactive escalations from Conduit/SuiteOp, and projects),
+  guides execution with SOP playbooks, and provides real-time status and weekly scorecards.
+
+stack:
+  language: TypeScript
+  runtime: Node 20
+  framework:
+    api: Fastify
+    slack: @slack/bolt (Express receiver disabled; use Fastify adapter)
+  ui: Slack surfaces only (App Home, modals, message actions, slash commands)
+  db: Postgres (Prisma ORM)
+  storage: Postgres JSONB for evidence metadata + signed URLs (use Supabase if external)
+  scheduling: node-cron + DB-driven SLA ticks
+  queue: in-process job queue (bullmq optional; default to cron + DB polling)
+
+env_vars:
+  - SLACK_SIGNING_SECRET
+  - SLACK_BOT_TOKEN
+  - SLACK_APP_LEVEL_TOKEN        # for socket mode fallback if needed
+  - APP_BASE_URL                 # https://<repl>.replit.app
+  - DATABASE_URL                 # Postgres connection string
+  - WEBHOOK_CONDUIT_SECRET
+  - WEBHOOK_SUITEOP_SECRET
+  - MANAGER_SLACK_ID             # <@Dan>
+  - TZ_MANAGER: America/Chicago
+  - TZ_TEAM: Asia/Manila
+
+packages_npm:
+  - @slack/bolt
+  - fastify
+  - fastify-raw-body
+  - zod
+  - prisma
+  - @prisma/client
+  - node-cron
+  - dayjs
+  - dayjs-plugin-utc
+  - dayjs-plugin-timezone
+  - uuid
+  - axios
+
+repo_layout:
+  - src/index.ts
+  - src/slack/bolt.ts
+  - src/slack/app_home.ts
+  - src/slack/commands.ts
+  - src/slack/actions.ts
+  - src/slack/modals.ts
+  - src/webhooks/conduit.ts
+  - src/webhooks/suiteop.ts
+  - src/api/tasks.ts
+  - src/api/projects.ts
+  - src/api/playbooks.ts
+  - src/jobs/scheduler.ts
+  - src/services/sla.ts
+  - src/services/followup.ts
+  - src/services/mappers.ts
+  - src/services/briefings.ts
+  - src/services/metrics.ts
+  - src/services/guess_assignee.ts
+  - src/db/prisma.ts
+  - prisma/schema.prisma
+  - seeds/seed_users.ts
+  - seeds/seed_playbooks.ts
+  - seeds/seed_checklists.ts
+
+data_model_prisma: |
+  datasource db { provider = "postgresql"; url = env("DATABASE_URL") }
+  generator client { provider = "prisma-client-js" }
+
+  model User {
+    id            String  @id @default(cuid())
+    slackId       String  @unique
+    name          String
+    role          String
+    timezone      String  @default("Asia/Manila")
+    createdAt     DateTime @default(now())
+    tasks         Task[]   @relation("UserTasks")
+    projectsOwned Project[] @relation("ProjectOwner")
+  }
+
+  model Task {
+    id           String   @id @default(cuid())
+    type         TaskType
+    title        String
+    category     String
+    status       TaskStatus @default(OPEN)
+    priority     Int       @default(3)      // 1 high, 5 low
+    assigneeId   String?
+    assignee     User?     @relation("UserTasks", fields: [assigneeId], references: [id])
+    dueAt        DateTime?
+    slaAt        DateTime?
+    sourceKind   String?   // slack|conduit|suiteop|manual
+    sourceId     String?
+    sourceUrl    String?
+    playbookKey  String?
+    dodSchema    Json?
+    evidence     Json?     // [{type, url, note}]
+    approvals    Json?     // [{bySlackId, at, decision}]
+    createdBy    String?
+    createdAt    DateTime  @default(now())
+    updatedAt    DateTime  @updatedAt
+    comments     Comment[]
+    audits       Audit[]   @relation("TaskAudits")
+    project      Project?  @relation(fields: [projectId], references: [id])
+    projectId    String?
+  }
+
+  enum TaskType { daily weekly reactive project }
+  enum TaskStatus { OPEN IN_PROGRESS WAITING BLOCKED DONE }
+
+  model Project {
+    id         String   @id @default(cuid())
+    title      String
+    scope      String
+    ownerId    String?
+    owner      User?    @relation("ProjectOwner", fields: [ownerId], references: [id])
+    status     String   @default("active")
+    view       String   @default("kanban")
+    startAt    DateTime?
+    targetAt   DateTime?
+    createdAt  DateTime @default(now())
+    updatedAt  DateTime @updatedAt
+    tasks      Task[]
+  }
+
+  model Comment {
+    id        String   @id @default(cuid())
+    taskId    String
+    authorId  String?
+    body      String
+    slackTs   String?
+    createdAt DateTime @default(now())
+    task      Task     @relation(fields: [taskId], references: [id])
+  }
+
+  model Audit {
+    id        String   @id @default(cuid())
+    entity    String
+    entityId  String
+    action    String
+    actorId   String?
+    data      Json?
+    ts        DateTime @default(now())
+    task      Task?    @relation("TaskAudits", fields: [entityId], references: [id])
+  }
+
+  model MetricRollup {
+    id        String   @id @default(cuid())
+    day       DateTime
+    userId    String?
+    counts    Json
+    createdAt DateTime @default(now())
+  }
+
+users_seed:
+  - { name: "Rica Lombos",  slack: "@Rica",  role: "Listing & OTA optimizer", timezone: "Asia/Manila" }
+  - { name: "Zyra Kamille Tendero", slack: "@Zyra", role: "Operations coordinator", timezone: "Asia/Manila" }
+  - { name: "John Richard Lunario", slack: "@Jorel", role: "EA & data manager (lead)", timezone: "Asia/Manila" }
+
+task_categories:
+  - reservations.refund_request
+  - reservations.cancellation_request
+  - reservations.change_request
+  - guest.messaging_known_answer
+  - access.smart_lock_issue
+  - internet.wifi_issue
+  - cleaning.issue
+  - maintenance.issue
+  - ota.listing_fix
+  - inventory.restock
+
+playbooks_yaml_examples:
+  guest_refund_request_v1: |
+    key: guest_refund_request_v1
+    category: reservations.refund_request
+    sla:
+      first_response_minutes: 10
+      breach_escalate_to: "#triage"
+    definition_of_done:
+      required_fields:
+        - guest_platform_id
+        - reservation_id
+        - refund_reason_code
+        - action_taken[approved|partial|denied|pending_owner]
+        - links[platform, slack_thread]
+      required_evidence:
+        - screenshot_platform_request
+        - notes_summary
+    steps:
+      - Validate policy eligibility and reservation state.
+      - Compute allowed refund per policy.
+      - Draft response template.
+      - If edge case → mark WAITING and @Jorel.
+    escalation:
+      night_hours: "22:00-07:00 Asia/Manila"
+      route: "#open-issues"
+
+  access_smart_lock_issue_v1: |
+    key: access_smart_lock_issue_v1
+    category: access.smart_lock_issue
+    sla: { first_response_minutes: 10, breach_escalate_to: "#triage" }
+    definition_of_done:
+      required_fields: [unit_id, device_type, code_window, guest_platform_id]
+      required_evidence: [photo_or_log_screenshot, resolution_notes]
+    steps:
+      - Verify correct code window and time drift.
+      - Check battery status and keypad logs.
+      - Provide fallback entry (lockbox) if unresolved in 10m.
+      - Create SuiteOp task if physical service required.
+
+slack_app:
+  features:
+    app_home:
+      - VA view: Today, Overdue, SLA ticker, Blocked, Next 3 steps, Last 24h completions
+      - Manager view: RAG by person/category, SLA breaches, aging, project burn-down
+    commands:
+      - /task        # create/update task
+      - /project     # create project and add tasks
+      - /brief       # show AM/PM brief on demand
+      - /done        # DoD modal to complete with evidence
+      - /blocker     # log blocker and notify owner
+      - /handoff     # transfer task with context bundle
+    message_actions:
+      - "Create Task"  # convert message→task with source link
+    events:
+      - app_home_opened
+      - app_mention
+      - message.channels
+      - message.app_home
+  oauth_scopes:
+    bot:
+      - app_mentions:read
+      - channels:history
+      - channels:read
+      - chat:write
+      - commands
+      - files:write
+      - groups:history
+      - groups:read
+      - im:history
+      - im:read
+      - im:write
+      - mpim:history
+      - reactions:read
+      - users:read
+  schedules:
+    - name: AM_brief_each_VA
+      cron: "0 9 * * 1-5"        # 09:00 Asia/Manila
+      handler: briefings.sendDailyVA
+    - name: PM_recap_each_VA
+      cron: "30 17 * * 1-5"      # 17:30 Asia/Manila
+      handler: briefings.sendPMVA
+    - name: Manager_digest
+      cron: "15 9 * * 1-5"       # 09:15 America/Chicago
+      handler: briefings.sendManager
+
+http_endpoints:
+  - method: POST
+    path: /slack/events
+    verify: slack_signature
+    handler: slack.bolt.receiver
+  - method: POST
+    path: /slack/interactive
+    verify: slack_signature
+    handler: slack.interactive
+  - method: POST
+    path: /webhooks/conduit
+    verify: hmac_header=WEBHOOK_CONDUIT_SECRET
+    handler: webhooks.conduit.ingest
+  - method: POST
+    path: /webhooks/suiteop
+    verify: hmac_header=WEBHOOK_SUITEOP_SECRET
+    handler: webhooks.suiteop.ingest
+  - method: GET
+    path: /api/tasks
+    auth: none
+    handler: api.tasks.query
+  - method: POST
+    path: /api/tasks
+    auth: none
+    handler: api.tasks.create
+  - method: PATCH
+    path: /api/tasks/:id
+    auth: none
+    handler: api.tasks.update
+  - method: GET
+    path: /healthz
+    handler: return 200
+
+webhook_mapping:
+  conduit:
+    accepts: [escalation.created, task.created, task.updated, ai.help_requested]
+    map:
+      escalation.created -> type: reactive, category: infer_by_payload
+      ai.help_requested  -> type: reactive, status: WAITING
+  suiteop:
+    accepts: [task.created, task.updated]
+    map:
+      task.created -> type: reactive, category: maintenance.issue|cleaning.issue
+
+sla_logic:
+  first_response_minutes: 10
+  compute:
+    - set task.slaAt = now + 10m if playbookKey present
+    - cron tick every 1m:
+        - find tasks where status in [OPEN, IN_PROGRESS] and now >= slaAt and not escalated
+        - mark breach, post escalation to configured channel, @assignee and @Jorel
+  escalation_rules:
+    - default_channel: "#triage"
+    - night_hours_PH: "22:00-07:00" -> also tag @Dan
+
+followup_catcher:
+  watch_channels: ["#triage", "#ops", "#open-issues"]
+  heuristics:
+    - regex_any: ["\\bI'?ll\\b", "\\bon it\\b", "\\bETA\\b", "\\bupdate by\\b"]
+  action:
+    - create follow-up task due_at = now + 4h
+    - thread-reply: “Created follow-up. I’ll remind you before due.”
+
+evidence_and_DoD:
+  modal_fields:
+    - required_fields from playbook.dodSchema
+    - required_evidence file attachments or URLs
+  completion_rule:
+    - block DONE until all required items present or exception approved by @Dan or @Jorel
+
+projects:
+  views:
+    - kanban columns: Backlog, In Progress, Waiting, Blocked, Done
+    - optional gantt: derive from dueAt
+  momentum:
+    - after task completion, suggest next 3 steps via SOP playbook templates
+
+briefings:
+  VA_AM:
+    sections: Today due, Overdue, SLA soon, Blocked, Assigned reactive queue
+  VA_PM:
+    sections: Completed, Still open, Misses, Required evidence outstanding
+  Manager:
+    sections: RAG by VA, SLA breaches 24h/7d, Aging buckets, Project burn-down, Reopens
+
+metrics_rollup:
+  daily_job:
+    - counts per user: created, completed, overdue, sla_breaches, reopens, followups_created
+  weekly_scorecard_fields:
+    - inbound_tasks
+    - completed_tasks
+    - open_tasks
+    - sla_first_response_pct
+    - sla_breach_count
+    - avg_cycle_time_reactive
+    - reopen_rate
+    - followup_created_vs_satisfied
+    - evidence_completeness_pct
+    - project_milestones_on_time
+
+access_control:
+  visibility: org-visible by default; DMs private
+  admins: [@Dan, @Jorel]
+  everyone_can_create: true
+
+seed_checklists:
+  source: uploaded PDF of daily/weekly tasks
+  init:
+    - create Task templates for Rica and Zyra:
+      - type: daily|weekly
+      - due windows defined by weekday
+      - attach playbookKey where applicable
+
+security:
+  - verify Slack signatures on /slack/* endpoints
+  - verify HMAC headers for Conduit/SuiteOp webhooks
+  - store minimal message content; keep sourceUrl links instead of full text when possible
+  - redact secrets in logs
+
+tests_acceptance:
+  - create_task_from_message:
+      steps:
+        - use message action “Create Task”
+        - expect task row with sourceUrl, assignee guessed, App Home shows it
+  - conduit_escalation_SLA:
+      steps:
+        - POST sample escalation payload
+        - expect task with slaAt=+10m
+        - simulate time pass to breach
+        - expect escalation post in #triage tagging assignee and @Jorel
+  - mark_done_DoD_enforced:
+      steps:
+        - attempt /done without evidence -> blocked
+        - attach required evidence -> DONE succeeds, audit recorded
+  - followup_created_from_promise:
+      steps:
+        - post “on it, will update by 3pm”
+        - expect follow-up task due in 4h and reminder
+  - briefings_render:
+      steps:
+        - trigger AM/PM handlers
+        - expect correct sections per VA and manager digest
+
+agent_tasks_sequence:
+  - Initialize Fastify + Bolt app with routes listed.
+  - Configure Prisma schema and run migrations.
+  - Implement App Home renderers (VA and Manager).
+  - Implement /task, /project, /brief, /done, /blocker, /handoff commands.
+  - Implement message action “Create Task.”
+  - Build Conduit and SuiteOp webhook handlers with signature verification and mapping.
+  - Implement SLA cron tick + escalation posts.
+  - Implement Follow-up catcher for selected channels.
+  - Implement briefings and digests per schedules and timezones.
+  - Seed users, categories, playbooks, and VA daily/weekly templates.
+  - Provide sample JSON payloads for Conduit/SuiteOp in /seeds/webhooks/*.json.
+  - Add /healthz.
+  - Ship sandbox install to test workspace and channels: #triage-sandbox, #open-issues-sandbox.
+
+deliverables:
+  - Running Replit web service with Slack app installed in sandbox
+  - .env template with all secrets
+  - README with setup, scopes, and test instructions
+  - Seeds executed: users, playbooks, checklists
+  - Sample webhook curl scripts

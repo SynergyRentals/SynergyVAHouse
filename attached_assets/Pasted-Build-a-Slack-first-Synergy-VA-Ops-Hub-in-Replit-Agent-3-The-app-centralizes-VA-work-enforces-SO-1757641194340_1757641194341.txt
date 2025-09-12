@@ -1,0 +1,166 @@
+Build a Slack-first “Synergy VA Ops Hub” in Replit Agent 3. The app centralizes VA work, enforces SOPs, and gives real-time visibility.
+
+Actors and context
+
+Dan (manager, America/Chicago).
+
+Jorel “@Jorel” (lead, EA + data, Asia/Manila).
+
+Rica “@Rica” (Listing/OTA optimizer, Asia/Manila).
+
+Zyra “@Zyra” (Ops coordinator, Asia/Manila).
+
+Slack is the communication layer. Conduit and SuiteOp emit webhooks.
+
+Work types to manage
+
+Daily and weekly checklists per VA.
+
+Reactive tasks: guest messaging, reservation changes/cancellations/refunds, cleaning, maintenance.
+
+Multi-step projects you assign.
+
+Problems to solve
+
+Missed refunds/cancellations/changes.
+
+Missed guest messages.
+
+Daily/weekly tasks not completed on time.
+
+Missed maintenance/cleaning follow-through.
+
+Low visibility into status and progress.
+
+Over-reliance on Dan for guidance.
+
+Goal
+One hub to capture every task, guide execution with playbooks, enforce proof of completion, and report status automatically. Slack is the front door. The web service runs in Replit.
+
+Core features
+
+Slack app surfaces
+
+App Home dashboards.
+
+VA view: Today, Overdue, SLA ticker, Blocked, Next 3 steps, Last 24h completions.
+
+Manager view: RAG by person and category, SLA breaches, aging, project burn-down, reopen rate.
+
+Message action “Create Task” to convert any message into a task with source link.
+
+Slash commands: /task, /project, /brief, /done, /blocker, /handoff.
+
+Scheduled DMs: AM brief 09:00 PH for each VA. PM recap 17:30 PH. Manager digest 09:15 CT.
+
+Inbound triage
+
+Webhooks from Conduit and SuiteOp. Map events into normalized Tasks with category, owner, SLA, and deep links.
+
+Categories include: reservations.refund_request, reservations.cancellation_request, reservations.change_request, guest.messaging_known_answer, access.smart_lock_issue, internet.wifi_issue, cleaning.issue, maintenance.issue, ota.listing_fix, inventory.restock.
+
+SOP Playbooks
+
+YAML playbooks per category. Include steps, examples, SLA, escalation, definition of done (DoD), and required evidence.
+
+Example SLA: first response in 10 minutes when the answer is known. Breach posts to #triage and tags the lead.
+
+Initial playbooks: refund, cancellation, reservation change, known-answer guest reply, smart lock, Wi-Fi, cleaning issue, maintenance issue, OTA fix, inventory restock.
+
+DoD and evidence enforcement
+
+“Mark done” opens a modal that requires specific fields and evidence (IDs, screenshots, links).
+
+Completion is blocked until DoD is met or an exception is approved by Dan or Jorel.
+
+Projects
+
+Lightweight Kanban. Each task tied to a project when applicable.
+
+“Next 3 steps” suggestions to keep momentum.
+
+Follow-up catcher
+
+Detects promises in Slack threads (“on it,” “I’ll update by…,” “ETA”).
+
+Creates follow-up tasks due within a set window and nudges if no update.
+
+Briefings and scorecards
+
+AM/PM briefs for VAs.
+
+Manager digest with weekly scorecard: inbound, completed, open, SLA first-response %, SLA breach count, average reactive cycle time, reopen rate, follow-up created vs satisfied, evidence completeness %, milestones on time.
+
+Access
+
+Org-visible by default. DMs private. Admins: Dan and Jorel. Everyone can create and assign tasks.
+
+Data and persistence
+
+Postgres for Users, Tasks, Projects, Comments, Audits, Metric rollups, Playbooks.
+
+Store evidence metadata and links. Prefer links to source messages and platform pages.
+
+Integrations
+
+Slack: Events, App Home, message actions, slash commands, DMs.
+
+Conduit and SuiteOp: HMAC-verified webhooks for escalations, task events, and AI help requests.
+
+Google Sheets export for weekly scorecards and a task ledger.
+
+SLA and escalation
+
+If a playbook exists and the answer is known, first response SLA is 10 minutes.
+
+Pre-breach nudge at T-5. Breach escalates to #triage, tags assignee and Jorel.
+
+Night rules use Manila hours. Page Dan only if the playbook states it.
+
+AI guidance
+
+The agent suggests category, playbook, next steps, and draft messages.
+
+No guest-facing messages are sent without an explicit Slack approval.
+
+Seed data
+
+Users: Dan, Jorel, Rica, Zyra with Slack IDs and time zones.
+
+Daily and weekly checklists for Rica and Zyra seeded from the provided document.
+
+First five playbooks loaded.
+
+Sandboxes
+
+Install in a staging Slack workspace. Use #triage-sandbox and #open-issues-sandbox. Provide sample webhook payloads.
+
+Non-goals for MVP
+
+No Guesty integration yet.
+
+No autonomous guest messaging.
+
+Success criteria
+
+≥95% on-time first response when a playbook exists.
+
+Zero missed guest messages.
+
+Daily and weekly tasks completed on schedule.
+
+Evidence completeness ≥90%.
+
+Clear weekly scorecard with trend lines.
+
+Acceptance tests
+
+Convert message → task and see it on dashboards.
+
+Conduit escalation creates reactive task with a 10-minute SLA and escalates on breach.
+
+DoD blocks completion until evidence is attached.
+
+Follow-up catcher creates and nudges follow-ups.
+
+AM/PM briefs and manager digest render correct summaries.
