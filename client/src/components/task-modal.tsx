@@ -26,6 +26,7 @@ import {
   MessageSquare,
   History
 } from "lucide-react";
+import { AISuggestions } from "./ai-suggestions";
 
 interface Task {
   id: string;
@@ -38,6 +39,7 @@ interface Task {
   sourceUrl?: string;
   playbookKey?: string;
   evidence?: any;
+  dodSchema?: any;
   assignee?: {
     id: string;
     name: string;
@@ -98,7 +100,8 @@ export function TaskModal({ task, isOpen, onClose }: TaskModalProps) {
     priority: 3,
     assigneeId: '',
     dueAt: '',
-    description: ''
+    description: '',
+    playbookKey: ''
   });
   
   const { toast } = useToast();
@@ -457,6 +460,26 @@ export function TaskModal({ task, isOpen, onClose }: TaskModalProps) {
                 data-testid="textarea-task-description"
               />
             </div>
+
+            {/* AI Suggestions for New Task */}
+            {newTaskData.title.trim() && (
+              <AISuggestions
+                taskTitle={newTaskData.title}
+                taskDescription={newTaskData.description}
+                sourceContext="manual_creation"
+                onApplySuggestion={(category, playbookKey) => {
+                  setNewTaskData(prev => ({
+                    ...prev,
+                    category: category || prev.category,
+                    playbookKey: playbookKey || prev.playbookKey
+                  }));
+                }}
+                onResponseDraftReady={(draft) => {
+                  // Store response draft for later use
+                  console.log('Response draft ready:', draft);
+                }}
+              />
+            )}
             
             <div className="flex items-center justify-end space-x-3">
               <Button variant="outline" onClick={onClose}>
@@ -561,7 +584,7 @@ export function TaskModal({ task, isOpen, onClose }: TaskModalProps) {
                         <div>
                           <Label className="text-sm font-medium mb-3 block">Required Fields</Label>
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {dod.required_fields.map((field) => {
+                            {dod.required_fields.map((field: string) => {
                               const isFieldMissing = dodValidation?.missingFields?.includes(field);
                               return (
                                 <div key={field} className={`space-y-2 ${isFieldMissing ? 'border-l-2 border-red-400 pl-3' : ''}`}>
@@ -590,7 +613,7 @@ export function TaskModal({ task, isOpen, onClose }: TaskModalProps) {
                         <div>
                           <Label className="text-sm font-medium mb-3 block">Required Evidence</Label>
                           <div className="space-y-4">
-                            {dod.required_evidence.map((evidenceType) => {
+                            {dod.required_evidence.map((evidenceType: string) => {
                               const isEvidenceMissing = dodValidation?.missingEvidence?.includes(evidenceType);
                               const evidenceValue = evidenceData[evidenceType];
                               
@@ -650,10 +673,10 @@ export function TaskModal({ task, isOpen, onClose }: TaskModalProps) {
                         <div className="flex-1">
                           <h5 className="font-medium text-red-800 dark:text-red-300 mb-2">Requirements Not Met</h5>
                           <div className="space-y-1 text-sm text-red-700 dark:text-red-400">
-                            {dodValidation.missingFields?.map((field) => (
+                            {dodValidation.missingFields?.map((field: string) => (
                               <div key={field}>• Missing field: {field.replace(/_/g, ' ')}</div>
                             ))}
-                            {dodValidation.missingEvidence?.map((evidence) => (
+                            {dodValidation.missingEvidence?.map((evidence: string) => (
                               <div key={evidence}>• Missing evidence: {evidence.replace(/_/g, ' ')}</div>
                             ))}
                           </div>
@@ -770,6 +793,23 @@ export function TaskModal({ task, isOpen, onClose }: TaskModalProps) {
                 </ol>
               </div>
             )}
+
+            {/* AI Suggestions for Existing Task */}
+            <AISuggestions
+              taskId={currentTask.id}
+              taskTitle={currentTask.title}
+              taskDescription={currentTask.comments?.map(c => c.body).join(' ') || ''}
+              sourceContext={currentTask.sourceUrl ? 'external_request' : 'internal_task'}
+              onApplySuggestion={() => {
+                // Refresh task data after AI suggestions are applied
+                queryClient.invalidateQueries({ queryKey: ['/api/tasks', currentTask.id] });
+                queryClient.invalidateQueries({ queryKey: ['/api/tasks'] });
+              }}
+              onResponseDraftReady={(draft) => {
+                // Store response draft for later use
+                console.log('Response draft ready for task:', draft);
+              }}
+            />
 
             <Separator />
 

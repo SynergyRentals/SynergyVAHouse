@@ -4,6 +4,7 @@ import { insertTaskSchema, insertProjectSchema } from "@shared/schema";
 import { registerTasksAPI } from "./api/tasks";
 import { registerProjectsAPI } from "./api/projects";
 import { registerPlaybooksAPI } from "./api/playbooks";
+import { registerAISuggestionsAPI } from "./api/ai-suggestions";
 import { setupConduitWebhooks } from "./webhooks/conduit";
 import { setupSuiteOpWebhooks } from "./webhooks/suiteop";
 
@@ -17,6 +18,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   await registerTasksAPI(app);
   await registerProjectsAPI(app);
   await registerPlaybooksAPI(app);
+  await registerAISuggestionsAPI(app);
 
   // Setup webhook handlers
   await setupConduitWebhooks(app);
@@ -81,7 +83,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       // Get recent audits across all entities
       const audits = await storage.getAuditsForEntity('task', '');
       const recentAudits = audits
-        .sort((a, b) => new Date(b.ts).getTime() - new Date(a.ts).getTime())
+        .sort((a, b) => new Date(b.ts || 0).getTime() - new Date(a.ts || 0).getTime())
         .slice(0, parseInt(limit));
       
       res.json(recentAudits);

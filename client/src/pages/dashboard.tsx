@@ -49,6 +49,7 @@ interface Task {
 export default function Dashboard() {
   const [viewMode, setViewMode] = useState<'va' | 'manager'>('va');
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [isCreatingTask, setIsCreatingTask] = useState(false);
 
   const { data: stats, isLoading: statsLoading } = useQuery<DashboardStats>({
     queryKey: ['/api/tasks/stats'],
@@ -336,7 +337,12 @@ export default function Dashboard() {
                 <CardHeader className="border-b border-border">
                   <div className="flex items-center justify-between">
                     <CardTitle>Today's Tasks</CardTitle>
-                    <Button variant="ghost" size="sm" data-testid="button-new-task">
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      data-testid="button-new-task"
+                      onClick={() => setIsCreatingTask(true)}
+                    >
                       + New Task
                     </Button>
                   </div>
@@ -466,7 +472,7 @@ export default function Dashboard() {
         </main>
       </div>
 
-      {/* Task Modal */}
+      {/* Task Modal for viewing existing tasks */}
       {selectedTask && (
         <TaskModal 
           task={selectedTask} 
@@ -474,6 +480,12 @@ export default function Dashboard() {
           onClose={() => setSelectedTask(null)} 
         />
       )}
+
+      {/* Task Modal for creating new tasks */}
+      <TaskModal 
+        isOpen={isCreatingTask}
+        onClose={() => setIsCreatingTask(false)}
+      />
     </div>
   );
 }

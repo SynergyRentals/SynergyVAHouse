@@ -1,8 +1,9 @@
 import { 
-  users, tasks, projects, comments, audits, metricRollups, playbooks,
+  users, tasks, projects, comments, audits, metricRollups, playbooks, aiSuggestions,
   type User, type InsertUser, type Task, type InsertTask, 
   type Project, type InsertProject, type Comment, type InsertComment,
-  type Audit, type InsertAudit, type Playbook, type InsertPlaybook
+  type Audit, type InsertAudit, type Playbook, type InsertPlaybook,
+  type AISuggestion, type InsertAISuggestion
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, gte, lte, sql } from "drizzle-orm";
@@ -46,6 +47,12 @@ export interface IStorage {
   // Metrics
   getMetrics(startDate: Date, endDate: Date, userId?: string): Promise<any[]>;
   createMetricRollup(rollup: any): Promise<void>;
+
+  // AI Suggestions
+  getAISuggestion(id: string): Promise<AISuggestion | undefined>;
+  getAISuggestionsForTask(taskId: string): Promise<AISuggestion[]>;
+  createAISuggestion(suggestion: InsertAISuggestion): Promise<AISuggestion>;
+  updateAISuggestion(id: string, updates: Partial<AISuggestion>): Promise<AISuggestion>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -98,12 +105,14 @@ export class DatabaseStorage implements IStorage {
       conditions.push(eq(tasks.sourceId, filters.sourceId));
     }
     
-    let query = db.select().from(tasks);
     if (conditions.length > 0) {
-      query = query.where(and(...conditions));
+      return await db.select().from(tasks)
+        .where(and(...conditions))
+        .orderBy(desc(tasks.createdAt));
     }
     
-    return await query.orderBy(desc(tasks.createdAt));
+    return await db.select().from(tasks)
+      .orderBy(desc(tasks.createdAt));
   }
 
   async getTasksForUser(userId: string): Promise<Task[]> {
@@ -226,6 +235,31 @@ export class DatabaseStorage implements IStorage {
 
   async createMetricRollup(rollup: any): Promise<void> {
     await db.insert(metricRollups).values(rollup);
+  }
+
+  // AI Suggestions
+  async getAISuggestion(id: string): Promise<AISuggestion | undefined> {
+    const [suggestion] = await db.select().from(aiSuggestions).where(eq(aiSuggestions.id, id));
+    return suggestion || undefined;
+  }
+
+  async getAISuggestionsForTask(taskId: string): Promise<AISuggestion[]> {
+    return await db.select().from(aiSuggestions)
+      .where(eq(aiSuggestions.taskId, taskId))
+      .orderBy(desc(aiSuggestions.createdAt));
+  }
+
+  async createAISuggestion(insertSuggestion: InsertAISuggestion): Promise<AISuggestion> {
+    const [suggestion] = await db.insert(aiSuggestions).values(insertSuggestion).returning();
+    return suggestion;
+  }
+
+  async updateAISuggestion(id: string, updates: Partial<AISuggestion>): Promise<AISuggestion> {
+    const [suggestion] = await db.update(aiSuggestions)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(aiSuggestions.id, id))
+      .returning();
+    return suggestion;
   }
 }
 

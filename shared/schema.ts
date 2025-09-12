@@ -89,6 +89,21 @@ export const playbooks = pgTable("playbooks", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+export const aiSuggestions = pgTable("ai_suggestions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  taskId: varchar("task_id").notNull(),
+  type: text("type").notNull(), // 'categorization', 'playbook', 'response_draft'
+  suggestions: jsonb("suggestions").notNull(), // AI suggestions data
+  appliedSuggestions: jsonb("applied_suggestions"), // Which suggestions were applied
+  confidence: integer("confidence").notNull().default(50), // 0-100
+  status: text("status").notNull().default('pending'), // pending, approved, rejected, applied
+  approvedBy: varchar("approved_by"),
+  approvedAt: timestamp("approved_at"),
+  slackApprovalTs: text("slack_approval_ts"), // Slack thread timestamp for approval workflow
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
 // Relations
 export const usersRelations = relations(users, ({ many }) => ({
   tasks: many(tasks),
@@ -160,6 +175,12 @@ export const insertPlaybookSchema = createInsertSchema(playbooks).omit({
   updatedAt: true,
 });
 
+export const insertAISuggestionSchema = createInsertSchema(aiSuggestions).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 // Types
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
@@ -173,3 +194,5 @@ export type InsertAudit = z.infer<typeof insertAuditSchema>;
 export type Audit = typeof audits.$inferSelect;
 export type InsertPlaybook = z.infer<typeof insertPlaybookSchema>;
 export type Playbook = typeof playbooks.$inferSelect;
+export type InsertAISuggestion = z.infer<typeof insertAISuggestionSchema>;
+export type AISuggestion = typeof aiSuggestions.$inferSelect;
