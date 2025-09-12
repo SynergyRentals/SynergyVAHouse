@@ -7,11 +7,55 @@ import { registerPlaybooksAPI } from "./api/playbooks";
 import { registerAISuggestionsAPI } from "./api/ai-suggestions";
 import { setupConduitWebhooks } from "./webhooks/conduit";
 import { setupSuiteOpWebhooks } from "./webhooks/suiteop";
+import { setupAuth, isAuthenticated } from "./replitAuth";
+import { requireReplitAuth, type AuthenticatedRequest } from "./middleware/auth";
 
 export async function registerRoutes(app: Express): Promise<void> {
+  // Setup Replit Auth middleware first
+  await setupAuth(app);
+
   // Health check
   app.get('/healthz', async (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  });
+
+  // Auth routes for frontend
+  app.get('/api/auth/user', async (req: AuthenticatedRequest, res) => {
+    try {
+      // Check if user has Replit Auth session
+      if (req.isAuthenticated && req.isAuthenticated() && req.user) {
+        const sessionUser = req.user as any;
+        if (sessionUser.claims?.sub) {
+          const user = await storage.getUser(sessionUser.claims.sub);
+          if (user) {
+            res.json({
+              id: user.id,
+              name: user.name,
+              email: user.email,
+              firstName: user.firstName,
+              lastName: user.lastName,
+              profileImageUrl: user.profileImageUrl,
+              role: user.role,
+              department: user.department,
+              authType: 'replit'
+            });
+            return;
+          }
+        }
+      }
+      
+      // No authenticated user found
+      res.status(401).json({ 
+        error: 'Not authenticated',
+        message: 'Please log in to access this resource'
+      });
+    } catch (error) {
+      console.error("Error fetching authenticated user:", error);
+      res.status(500).json({ 
+        error: 'Failed to fetch user information',
+        message: 'An error occurred while retrieving user data'
+      });
+    }
   });
 
   // Register API modules

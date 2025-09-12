@@ -1,6 +1,6 @@
 import { 
   users, tasks, projects, comments, audits, metricRollups, playbooks, aiSuggestions,
-  type User, type InsertUser, type Task, type InsertTask, 
+  type User, type InsertUser, type UpsertUser, type Task, type InsertTask, 
   type Project, type InsertProject, type Comment, type InsertComment,
   type Audit, type InsertAudit, type Playbook, type InsertPlaybook,
   type AISuggestion, type InsertAISuggestion
@@ -13,6 +13,7 @@ export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
   getUserBySlackId(slackId: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
+  upsertUser(user: UpsertUser): Promise<User>; // Required for Replit Auth
   getAllUsers(): Promise<User[]>;
 
   // Tasks
@@ -69,6 +70,21 @@ export class DatabaseStorage implements IStorage {
 
   async createUser(insertUser: InsertUser): Promise<User> {
     const [user] = await db.insert(users).values(insertUser).returning();
+    return user;
+  }
+
+  async upsertUser(userData: UpsertUser): Promise<User> {
+    const [user] = await db
+      .insert(users)
+      .values(userData)
+      .onConflictDoUpdate({
+        target: users.id,
+        set: {
+          ...userData,
+          updatedAt: new Date(),
+        },
+      })
+      .returning();
     return user;
   }
 

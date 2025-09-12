@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, timestamp, integer, jsonb, boolean, pgEnum } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, timestamp, integer, jsonb, boolean, pgEnum, index } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -7,13 +7,37 @@ import { z } from "zod";
 export const taskTypeEnum = pgEnum('task_type', ['daily', 'weekly', 'reactive', 'project', 'follow_up']);
 export const taskStatusEnum = pgEnum('task_status', ['OPEN', 'IN_PROGRESS', 'WAITING', 'BLOCKED', 'DONE']);
 
+// Session storage table for Replit Auth
+export const sessions = pgTable(
+  "sessions",
+  {
+    sid: varchar("sid").primaryKey(),
+    sess: jsonb("sess").notNull(),
+    expire: timestamp("expire").notNull(),
+  },
+  (table) => [index("IDX_session_expire").on(table.expire)],
+);
+
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  slackId: text("slack_id").notNull().unique(),
+  // Existing Slack integration fields
+  slackId: text("slack_id").unique(), // Made nullable for web users
   name: text("name").notNull(),
   role: text("role").notNull(),
   timezone: text("timezone").notNull().default("Asia/Manila"),
+  // New Replit Auth fields
+  email: varchar("email").unique(),
+  firstName: varchar("first_name"),
+  lastName: varchar("last_name"),
+  profileImageUrl: varchar("profile_image_url"),
+  // Additional enhanced fields
+  permissions: jsonb("permissions"), // {read: boolean, write: boolean, admin: boolean, etc.}
+  preferences: jsonb("preferences"), // {theme: string, notifications: boolean, etc.}
+  isActive: boolean("is_active").notNull().default(true),
+  department: text("department"),
+  managerId: varchar("manager_id"),
   createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
 });
 
 export const tasks = pgTable("tasks", {
@@ -105,9 +129,17 @@ export const aiSuggestions = pgTable("ai_suggestions", {
 });
 
 // Relations
-export const usersRelations = relations(users, ({ many }) => ({
+export const usersRelations = relations(users, ({ one, many }) => ({
   tasks: many(tasks),
   projectsOwned: many(projects),
+  manager: one(users, {
+    fields: [users.managerId],
+    references: [users.id],
+    relationName: "manager_subordinates"
+  }),
+  subordinates: many(users, {
+    relationName: "manager_subordinates"
+  }),
 }));
 
 export const tasksRelations = relations(tasks, ({ one, many }) => ({
@@ -145,6 +177,14 @@ export const commentsRelations = relations(comments, ({ one }) => ({
 export const insertUserSchema = createInsertSchema(users).omit({
   id: true,
   createdAt: true,
+  updatedAt: true,
+});
+
+export const upsertUserSchema = createInsertSchema(users).omit({
+  createdAt: true,
+  updatedAt: true,
+}).partial().required({
+  id: true,
 });
 
 export const insertTaskSchema = createInsertSchema(tasks).omit({
@@ -183,6 +223,7 @@ export const insertAISuggestionSchema = createInsertSchema(aiSuggestions).omit({
 
 // Types
 export type InsertUser = z.infer<typeof insertUserSchema>;
+export type UpsertUser = z.infer<typeof upsertUserSchema>;
 export type User = typeof users.$inferSelect;
 export type InsertTask = z.infer<typeof insertTaskSchema>;
 export type Task = typeof tasks.$inferSelect;
