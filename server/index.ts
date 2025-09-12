@@ -9,8 +9,8 @@ import { log, setupVite } from './vite';
 const app = express();
 
 // Register middleware
-app.use(bodyParser.raw({ type: 'application/json' }));
-app.use(express.json());
+app.use('/webhooks', bodyParser.raw({ type: 'application/json' })); // Only for webhooks
+app.use(express.json()); // For API endpoints
 app.use(express.urlencoded({ extended: true }));
 
 // Custom logging middleware

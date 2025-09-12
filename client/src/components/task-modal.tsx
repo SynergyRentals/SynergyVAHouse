@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { 
   Dialog, 
@@ -101,7 +101,7 @@ export function TaskModal({ task, isOpen, onClose }: TaskModalProps) {
   const queryClient = useQueryClient();
 
   // Reset component state when task prop changes
-  React.useEffect(() => {
+  useEffect(() => {
     setIsCreatingNew(!task);
     if (!task) {
       setNewTaskData({
@@ -157,6 +157,7 @@ export function TaskModal({ task, isOpen, onClose }: TaskModalProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...taskData,
+          type: 'reactive', // Manual tasks created through UI are reactive
           status: 'OPEN',
           dueAt: taskData.dueAt || null,
         }),
