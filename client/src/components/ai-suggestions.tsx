@@ -38,6 +38,29 @@ interface AISuggestions {
   confidence: number;
 }
 
+interface AISuggestionsWithMeta extends AISuggestions {
+  suggestionId: string;
+  status: string;
+  slackApprovalTs?: string;
+  approvedBy?: string;
+  approvedAt?: Date;
+}
+
+interface AISuggestionRecord {
+  id: string;
+  taskId: string;
+  type: string;
+  suggestions: AISuggestions;
+  appliedSuggestions?: any;
+  confidence: number;
+  status: string;
+  approvedBy?: string;
+  approvedAt?: Date;
+  slackApprovalTs?: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 interface AISuggestionsProps {
   taskId?: string;
   taskTitle: string;
@@ -45,6 +68,7 @@ interface AISuggestionsProps {
   sourceContext?: string;
   onApplySuggestion?: (category?: string, playbookKey?: string) => void;
   onResponseDraftReady?: (draft: ResponseDraft) => void;
+  onSuggestionGenerated?: (suggestionId: string) => void;
 }
 
 export function AISuggestions({
@@ -53,7 +77,8 @@ export function AISuggestions({
   taskDescription,
   sourceContext,
   onApplySuggestion,
-  onResponseDraftReady
+  onResponseDraftReady,
+  onSuggestionGenerated
 }: AISuggestionsProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [selectedSuggestions, setSelectedSuggestions] = useState<{
@@ -66,19 +91,40 @@ export function AISuggestions({
   const queryClient = useQueryClient();
 
   // Generate AI suggestions
-  const { data: suggestions, isLoading: isGenerating, refetch: regenerateSuggestions } = useQuery({
-    queryKey: ['ai-suggestions', taskTitle, taskDescription],
-    queryFn: async (): Promise<AISuggestions> => {
+  const { data: suggestions, isLoading: isGenerating, refetch: regenerateSuggestions, error: suggestionsError } = useQuery({
+    queryKey: ['ai-suggestions', taskTitle, taskDescription, taskId],
+    queryFn: async (): Promise<AISuggestionsWithMeta> => {
       const response = taskId 
-        ? await apiRequest('POST', `/api/ai/suggest-for-task/${taskId}`, {})
+        ? await apiRequest('POST', `/api/ai/suggest-for-task/${taskId}`, {
+            actorId: 'web-user' // TODO: Get actual user ID from auth context
+          })
         : await apiRequest('POST', '/api/ai/suggest-task', {
             taskTitle,
             taskDescription,
-            sourceContext
+            sourceContext,
+            taskId,
+            actorId: 'web-user' // TODO: Get actual user ID from auth context
           });
       return response.json();
     },
-    enabled: !!taskTitle
+    enabled: !!taskTitle,
+    retry: (failureCount, error: any) => {
+      // Don't retry if it's an OpenAI issue
+      if (error?.status === 500 && error?.message?.includes('OpenAI')) {
+        return false;
+      }
+      return failureCount < 2;
+    }
+  });
+
+  // Get suggestion history for existing tasks
+  const { data: suggestionHistory } = useQuery({
+    queryKey: ['ai-suggestions-history', taskId],
+    queryFn: async (): Promise<AISuggestionRecord[]> => {
+      const response = await apiRequest('GET', `/api/ai/suggestions/${taskId}`);
+      return response.json();
+    },
+    enabled: !!taskId
   });
 
   // Apply suggestions mutation
@@ -93,7 +139,7 @@ export function AISuggestions({
       return await apiRequest('POST', `/api/ai/apply-suggestions/${taskId}`, {
         category,
         playbookKey,
-        actorId: 'current-user' // TODO: Get actual user ID
+        actorId: 'web-user' // TODO: Get actual user ID from auth context
       });
     },
     onSuccess: () => {
@@ -110,6 +156,34 @@ export function AISuggestions({
       toast({
         title: "Error",
         description: "Failed to apply AI suggestions.",
+        variant: "destructive",
+      });
+    }
+  });
+
+  // Link suggestion to task mutation
+  const linkSuggestionMutation = useMutation({
+    mutationFn: async ({ suggestionId, taskId }: { suggestionId: string; taskId: string }) => {
+      const response = await apiRequest('PATCH', `/api/ai/suggestion/${suggestionId}/link`, {
+        taskId,
+        actorId: 'web-user' // TODO: Get actual user ID from auth context
+      });
+      return response.json();
+    },
+    onSuccess: () => {
+      toast({
+        title: "Suggestion Linked",
+        description: "AI suggestion has been linked to the task successfully.",
+      });
+      if (taskId) {
+        queryClient.invalidateQueries({ queryKey: ['ai-suggestions-history', taskId] });
+        queryClient.invalidateQueries({ queryKey: ['/api/tasks', taskId] });
+      }
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to link AI suggestion to task.",
         variant: "destructive",
       });
     }
@@ -168,7 +242,80 @@ export function AISuggestions({
     }
   }, [suggestions?.responseDraft, onResponseDraftReady]);
 
+  useEffect(() => {
+    if (suggestions?.suggestionId && !taskId) {
+      // For new tasks, call the callback to provide suggestion ID to parent
+      onSuggestionGenerated?.(suggestions.suggestionId);
+    }
+  }, [suggestions?.suggestionId, taskId, onSuggestionGenerated]);
+
+  // Function to manually link suggestion to task (exposed for external use)
+  const linkToTask = (taskId: string) => {
+    if (suggestions?.suggestionId) {
+      linkSuggestionMutation.mutate({
+        suggestionId: suggestions.suggestionId,
+        taskId
+      });
+    }
+  };
+
+  const getStatusBadgeVariant = (status: string) => {
+    switch (status) {
+      case 'approved':
+      case 'applied':
+        return 'default';
+      case 'pending':
+        return 'secondary';
+      case 'rejected':
+        return 'destructive';
+      default:
+        return 'outline';
+    }
+  };
+
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case 'approved':
+      case 'applied':
+        return <CheckCircle className="h-3 w-3" />;
+      case 'pending':
+        return <Brain className="h-3 w-3" />;
+      case 'rejected':
+        return <X className="h-3 w-3" />;
+      default:
+        return <Zap className="h-3 w-3" />;
+    }
+  };
+
   if (!taskTitle) return null;
+
+  // Show error state for OpenAI issues
+  if (suggestionsError && !isGenerating) {
+    return (
+      <Card className="border-red-200 dark:border-red-800">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-red-600 dark:text-red-400">
+            <X className="h-4 w-4" />
+            AI Suggestions Unavailable
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground mb-4">
+            AI suggestions are currently unavailable. This could be due to OpenAI service issues or configuration problems.
+          </p>
+          <Button
+            onClick={() => regenerateSuggestions()}
+            variant="outline"
+            size="sm"
+            data-testid="button-retry-suggestions"
+          >
+            <Brain className="h-3 w-3 mr-1" />
+            Retry
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <Card className="border-purple-200 dark:border-purple-800">
@@ -184,9 +331,17 @@ export function AISuggestions({
             <div className="animate-spin h-4 w-4 border-2 border-purple-600 border-t-transparent rounded-full" />
           )}
           {suggestions && (
-            <Badge className={getConfidenceColor(suggestions.confidence)}>
-              {Math.round(suggestions.confidence * 100)}% confident
-            </Badge>
+            <>
+              <Badge className={getConfidenceColor(suggestions.confidence)}>
+                {Math.round(suggestions.confidence * 100)}% confident
+              </Badge>
+              {suggestions.status && (
+                <Badge variant={getStatusBadgeVariant(suggestions.status)} className="flex items-center gap-1">
+                  {getStatusIcon(suggestions.status)}
+                  {suggestions.status}
+                </Badge>
+              )}
+            </>
           )}
         </CardTitle>
       </CardHeader>
@@ -269,8 +424,34 @@ export function AISuggestions({
                 </div>
               )}
 
+              {/* Suggestion Status Information */}
+              {suggestions.status && suggestions.status !== 'generated' && (
+                <div className="p-3 border rounded-lg bg-muted/50" data-testid="suggestion-status-info">
+                  <div className="flex items-center gap-2 mb-2">
+                    {getStatusIcon(suggestions.status)}
+                    <span className="font-medium capitalize">{suggestions.status}</span>
+                    {suggestions.approvedBy && (
+                      <span className="text-sm text-muted-foreground">
+                        by {suggestions.approvedBy}
+                      </span>
+                    )}
+                    {suggestions.approvedAt && (
+                      <span className="text-sm text-muted-foreground">
+                        {new Date(suggestions.approvedAt).toLocaleDateString()}
+                      </span>
+                    )}
+                  </div>
+                  {suggestions.slackApprovalTs && (
+                    <p className="text-xs text-muted-foreground">
+                      Slack approval workflow active
+                    </p>
+                  )}
+                </div>
+              )}
+
               {/* Apply Suggestions Button */}
-              {(selectedSuggestions.category || selectedSuggestions.playbook) && (
+              {(selectedSuggestions.category || selectedSuggestions.playbook) && 
+               suggestions.status !== 'applied' && suggestions.status !== 'rejected' && (
                 <Button
                   onClick={handleApplySuggestions}
                   disabled={applySuggestionsMutation.isPending}
@@ -377,6 +558,47 @@ export function AISuggestions({
                     </div>
                   )}
                 </div>
+              )}
+
+              {/* Suggestion History */}
+              {suggestionHistory && suggestionHistory.length > 0 && (
+                <>
+                  <Separator />
+                  <div>
+                    <Label className="text-sm font-semibold">Suggestion History</Label>
+                    <div className="space-y-2 mt-2" data-testid="suggestion-history">
+                      {suggestionHistory.slice(0, 3).map((record, index) => (
+                        <div 
+                          key={record.id}
+                          className="p-2 border rounded text-sm"
+                          data-testid={`suggestion-history-${index}`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              {getStatusIcon(record.status)}
+                              <span className="font-medium">{record.type}</span>
+                              <Badge variant={getStatusBadgeVariant(record.status)} className="text-xs">
+                                {record.status}
+                              </Badge>
+                            </div>
+                            <span className="text-xs text-muted-foreground">
+                              {new Date(record.createdAt).toLocaleDateString()}
+                            </span>
+                          </div>
+                          <div className="text-xs text-muted-foreground mt-1">
+                            {record.confidence}% confidence
+                            {record.approvedBy && ` • Approved by ${record.approvedBy}`}
+                          </div>
+                        </div>
+                      ))}
+                      {suggestionHistory.length > 3 && (
+                        <p className="text-xs text-muted-foreground text-center">
+                          +{suggestionHistory.length - 3} more suggestions
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </>
               )}
 
               {/* Regenerate Button */}

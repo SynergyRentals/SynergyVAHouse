@@ -103,6 +103,7 @@ export function TaskModal({ task, isOpen, onClose }: TaskModalProps) {
     description: '',
     playbookKey: ''
   });
+  const [currentSuggestionId, setCurrentSuggestionId] = useState<string | null>(null);
   
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -117,7 +118,8 @@ export function TaskModal({ task, isOpen, onClose }: TaskModalProps) {
         priority: 3,
         assigneeId: '',
         dueAt: '',
-        description: ''
+        description: '',
+        playbookKey: ''
       });
     }
     setIsCompleting(false);
@@ -180,9 +182,35 @@ export function TaskModal({ task, isOpen, onClose }: TaskModalProps) {
       if (!response.ok) throw new Error('Failed to create task');
       return response.json();
     },
-    onSuccess: () => {
+    onSuccess: async (createdTask) => {
       queryClient.invalidateQueries({ queryKey: ['/api/tasks'] });
       toast({ title: "Task created successfully" });
+      
+      // If there's a suggestion ID, link it to the created task
+      if (currentSuggestionId) {
+        try {
+          const response = await fetch(`/api/ai/suggestion/${currentSuggestionId}/link`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              taskId: createdTask.id,
+              actorId: 'web-user' // TODO: Get actual user ID from auth context
+            }),
+          });
+          
+          if (response.ok) {
+            toast({
+              title: "AI Suggestion Linked",
+              description: "AI suggestions have been linked to the task successfully.",
+            });
+          } else {
+            console.error('Failed to link suggestion to task');
+          }
+        } catch (error) {
+          console.error('Error linking suggestion to task:', error);
+        }
+      }
+      
       onClose();
     },
     onError: () => {
@@ -471,12 +499,15 @@ export function TaskModal({ task, isOpen, onClose }: TaskModalProps) {
                   setNewTaskData(prev => ({
                     ...prev,
                     category: category || prev.category,
-                    playbookKey: playbookKey || prev.playbookKey
+                    playbookKey: playbookKey || prev.playbookKey || ''
                   }));
                 }}
                 onResponseDraftReady={(draft) => {
                   // Store response draft for later use
                   console.log('Response draft ready:', draft);
+                }}
+                onSuggestionGenerated={(suggestionId) => {
+                  setCurrentSuggestionId(suggestionId);
                 }}
               />
             )}

@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import { storage } from "../storage";
+import { getSlackApp } from "../slack/bolt";
 
 // the newest OpenAI model is "gpt-5" which was released August 7, 2025. do not change this unless explicitly requested by the user
 const openai = new OpenAI({ 
@@ -34,6 +35,14 @@ export interface AISuggestions {
   confidence: number;
 }
 
+export interface AISuggestionsWithMeta extends AISuggestions {
+  suggestionId: string;
+  status: string;
+  slackApprovalTs?: string;
+  approvedBy?: string;
+  approvedAt?: Date;
+}
+
 /**
  * Get all available categories and playbooks for AI analysis
  */
@@ -57,8 +66,10 @@ async function getAvailablePlaybooks() {
 export async function generateTaskSuggestions(
   taskTitle: string,
   taskDescription?: string,
-  sourceContext?: string
-): Promise<AISuggestions> {
+  sourceContext?: string,
+  taskId?: string,
+  actorId?: string
+): Promise<AISuggestionsWithMeta> {
   try {
     const playbooks = await getAvailablePlaybooks();
     const playbookSummary = playbooks.map(p => ({
@@ -139,7 +150,7 @@ Focus on:
     const suggestions = JSON.parse(response.choices[0].message.content || '{}');
     
     // Validate and clean up the response
-    return {
+    const cleanedSuggestions: AISuggestions = {
       categorySuggestions: suggestions.categorySuggestions || [],
       playbookSuggestions: suggestions.playbookSuggestions || [],
       responseDraft: suggestions.responseDraft || {
@@ -152,11 +163,72 @@ Focus on:
       confidence: suggestions.confidence || 0.5
     };
 
+    // Always persist suggestions to database (for new tasks, taskId will be updated later)
+    let suggestionRecord;
+    let slackApprovalTs;
+    
+    try {
+        // Create AI suggestion record
+        suggestionRecord = await storage.createAISuggestion({
+          taskId: taskId ?? null, // Allow null for new task suggestions
+          type: 'full_analysis',
+          suggestions: cleanedSuggestions,
+          confidence: Math.round((cleanedSuggestions.confidence || 0.5) * 100),
+          status: 'pending'
+        });
+
+        // Create audit log
+        if (actorId) {
+          await storage.createAudit({
+            entity: 'ai_suggestions',
+            entityId: suggestionRecord.id,
+            action: 'ai_suggestions_generated',
+            actorId,
+            data: {
+              taskId,
+              confidence: cleanedSuggestions.confidence,
+              categorySuggestions: cleanedSuggestions.categorySuggestions.length,
+              playbookSuggestions: cleanedSuggestions.playbookSuggestions.length,
+              requiresApproval: cleanedSuggestions.responseDraft.requiresApproval
+            }
+          });
+        }
+
+        // Post to Slack for approval if response requires approval and taskId exists
+        if (cleanedSuggestions.responseDraft.requiresApproval && taskId) {
+          slackApprovalTs = await postSlackApprovalRequest(
+            suggestionRecord.id,
+            taskId,
+            taskTitle,
+            cleanedSuggestions
+          );
+          
+          // Update suggestion with Slack timestamp
+          if (slackApprovalTs) {
+            await storage.updateAISuggestion(suggestionRecord.id, {
+              slackApprovalTs
+            });
+          }
+        }
+      } catch (error) {
+        console.error('Error persisting AI suggestions:', error);
+        // Continue with the response even if persistence fails
+      }
+
+    return {
+      ...cleanedSuggestions,
+      suggestionId: suggestionRecord?.id || 'temp-' + Date.now(),
+      status: suggestionRecord?.status || 'generated',
+      slackApprovalTs,
+      approvedBy: suggestionRecord?.approvedBy || undefined,
+      approvedAt: suggestionRecord?.approvedAt || undefined
+    };
+
   } catch (error) {
     console.error('Error generating AI suggestions:', error);
     
     // Fallback response
-    return {
+    const fallbackSuggestions: AISuggestions = {
       categorySuggestions: [{
         category: "guest.messaging_known_answer",
         confidence: 0.3,
@@ -176,6 +248,28 @@ Focus on:
         requiresApproval: true
       },
       confidence: 0.3
+    };
+
+    // Still persist fallback suggestions if taskId provided
+    let fallbackRecord;
+    if (taskId) {
+      try {
+        fallbackRecord = await storage.createAISuggestion({
+          taskId,
+          type: 'fallback_error',
+          suggestions: fallbackSuggestions,
+          confidence: 30,
+          status: 'pending'
+        });
+      } catch (error) {
+        console.error('Error persisting fallback suggestions:', error);
+      }
+    }
+
+    return {
+      ...fallbackSuggestions,
+      suggestionId: fallbackRecord?.id || 'fallback-' + Date.now(),
+      status: fallbackRecord?.status || 'generated'
     };
   }
 }
@@ -304,5 +398,150 @@ Respond with JSON: {"followUps": ["action 1", "action 2", "action 3"]}`;
       "Document lessons learned",
       "Update process if needed"
     ];
+  }
+}
+
+/**
+ * Post AI suggestions to Slack for approval workflow
+ */
+export async function postSlackApprovalRequest(
+  suggestionId: string,
+  taskId: string,
+  taskTitle: string,
+  suggestions: AISuggestions
+): Promise<string | undefined> {
+  try {
+    const slackApp = getSlackApp();
+    if (!slackApp) {
+      console.log('Slack app not configured, skipping approval request');
+      return undefined;
+    }
+
+    // Find a manager to send approval request to
+    const users = await storage.getAllUsers();
+    const managers = users.filter(u => u.role.toLowerCase().includes('manager'));
+    
+    if (managers.length === 0) {
+      console.log('No managers found for AI approval workflow');
+      return undefined;
+    }
+
+    // Use the first manager found
+    const manager = managers[0];
+
+    // Build approval blocks
+    const blocks = [
+      {
+        type: 'header',
+        text: {
+          type: 'plain_text',
+          text: '🤖 AI Suggestions Need Approval'
+        }
+      },
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `*Task:* ${taskTitle}\n*Task ID:* ${taskId}\n*Confidence:* ${Math.round((suggestions.confidence || 0) * 100)}%`
+        }
+      },
+      {
+        type: 'divider'
+      }
+    ];
+
+    // Add category suggestions
+    if (suggestions.categorySuggestions.length > 0) {
+      blocks.push({
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `*📂 Category Suggestions:*\n${suggestions.categorySuggestions.map(c => 
+            `• ${c.category} (${Math.round(c.confidence * 100)}%) - ${c.reasoning}`
+          ).join('\n')}`
+        }
+      });
+    }
+
+    // Add playbook suggestions
+    if (suggestions.playbookSuggestions.length > 0) {
+      blocks.push({
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `*📋 Playbook Suggestions:*\n${suggestions.playbookSuggestions.map(p => 
+            `• ${p.playbookKey} (${Math.round(p.confidence * 100)}%) - ${p.reasoning}`
+          ).join('\n')}`
+        }
+      });
+    }
+
+    // Add response draft
+    blocks.push({
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: `*✉️ Response Draft:*\n*Subject:* ${suggestions.responseDraft.subject}\n*Content:* ${suggestions.responseDraft.content.substring(0, 500)}${suggestions.responseDraft.content.length > 500 ? '...' : ''}\n*Tone:* ${suggestions.responseDraft.tone}`
+      }
+    });
+
+    // Add next steps
+    if (suggestions.responseDraft.nextSteps.length > 0) {
+      blocks.push({
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `*📝 Next Steps:*\n${suggestions.responseDraft.nextSteps.map(step => `• ${step}`).join('\n')}`
+        }
+      });
+    }
+
+    // Add approval actions  
+    blocks.push({
+      type: 'actions',
+      elements: [
+        {
+          type: 'button',
+          text: {
+            type: 'plain_text',
+            text: '✅ Approve & Apply'
+          },
+          style: 'primary',
+          action_id: 'approve_ai_suggestions',
+          value: suggestionId
+        },
+        {
+          type: 'button',
+          text: {
+            type: 'plain_text',
+            text: '❌ Reject'
+          },
+          style: 'danger',
+          action_id: 'reject_ai_suggestions',
+          value: suggestionId
+        },
+        {
+          type: 'button',
+          text: {
+            type: 'plain_text',
+            text: '📝 View Task'
+          },
+          action_id: 'view_task_details',
+          value: taskId
+        }
+      ]
+    } as any);
+
+    // Post message to manager
+    const result = await slackApp.client.chat.postMessage({
+      channel: manager.slackId,
+      text: `AI suggestions generated for task "${taskTitle}" - approval needed`,
+      blocks
+    });
+
+    return result.ts;
+  } catch (error) {
+    console.error('Error posting Slack approval request:', error);
+    return undefined;
   }
 }

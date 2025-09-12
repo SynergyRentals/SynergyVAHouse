@@ -595,9 +595,15 @@ export function setupActions(app: App) {
       const user = await storage.getUserBySlackId(body.user.id);
       if (!user) return;
       
+      if (!newDueDateTimestamp) {
+        console.error('No due date timestamp provided');
+        return;
+      }
+      
       const newDueDate = new Date(newDueDateTimestamp * 1000);
       
-      await extendFollowUpDeadline(taskId, newDueDate, reason, user.slackId);
+      // Update task with new due date
+      await storage.updateTask(taskId, { dueAt: newDueDate });
       
       await client.chat.postMessage({
         channel: user.slackId,
@@ -681,6 +687,297 @@ export function setupActions(app: App) {
       });
     } catch (error) {
       console.error('Error in review_critical_issue action:', error);
+    }
+  });
+
+  // Approve AI suggestions action
+  app.action('approve_ai_suggestions', async ({ action, ack, respond, body, client }) => {
+    await ack();
+    
+    try {
+      const suggestionId = (action as any).value;
+      const userId = (body as any).user.id;
+      
+      const user = await storage.getUserBySlackId(userId);
+      if (!user) {
+        await respond({
+          text: '❌ User not found in system.',
+          replace_original: false
+        });
+        return;
+      }
+      
+      const suggestion = await storage.getAISuggestion(suggestionId);
+      if (!suggestion) {
+        await respond({
+          text: '❌ AI suggestion not found.',
+          replace_original: false
+        });
+        return;
+      }
+      
+      if (!suggestion.taskId) {
+        await respond({
+          text: '❌ AI suggestion is not linked to a task.',
+          replace_original: false
+        });
+        return;
+      }
+
+      const task = await storage.getTask(suggestion.taskId);
+      if (!task) {
+        await respond({
+          text: '❌ Task not found.',
+          replace_original: false
+        });
+        return;
+      }
+      
+      // Update suggestion status
+      await storage.updateAISuggestion(suggestionId, {
+        status: 'approved',
+        approvedBy: user.id,
+        approvedAt: new Date()
+      });
+      
+      // Apply suggestions to task (use highest confidence suggestions)
+      const suggestions = suggestion.suggestions as any;
+      let updates: any = {};
+      let appliedSuggestions: any = {};
+      
+      if (suggestions.categorySuggestions?.length > 0) {
+        const topCategory = suggestions.categorySuggestions[0];
+        updates.category = topCategory.category;
+        appliedSuggestions.category = topCategory;
+      }
+      
+      if (suggestions.playbookSuggestions?.length > 0) {
+        const topPlaybook = suggestions.playbookSuggestions[0];
+        updates.playbookKey = topPlaybook.playbookKey;
+        appliedSuggestions.playbook = topPlaybook;
+      }
+      
+      // Update task with applied suggestions
+      if (Object.keys(updates).length > 0) {
+        await storage.updateTask(suggestion.taskId!, updates);
+        
+        // Update suggestion with applied data
+        await storage.updateAISuggestion(suggestionId, {
+          appliedSuggestions,
+          status: 'applied'
+        });
+      }
+      
+      // Create audit log
+      await storage.createAudit({
+        entity: 'ai_suggestions',
+        entityId: suggestionId,
+        action: 'ai_suggestions_approved',
+        actorId: user.id,
+        data: {
+          taskId: task.id,
+          appliedUpdates: updates,
+          approvedBy: user.name
+        }
+      });
+      
+      await respond({
+        text: `✅ AI suggestions approved and applied to task "${task.title}"!\n\nApplied changes:\n${Object.entries(updates).map(([key, value]) => `• ${key}: ${value}`).join('\n')}`,
+        replace_original: true
+      });
+      
+      console.log(`AI suggestions ${suggestionId} approved and applied by ${user.name}`);
+    } catch (error) {
+      console.error('Error approving AI suggestions:', error);
+      await respond({
+        text: '❌ Failed to approve AI suggestions. Please try again.',
+        replace_original: false
+      });
+    }
+  });
+
+  // Reject AI suggestions action
+  app.action('reject_ai_suggestions', async ({ action, ack, respond, body, client }) => {
+    await ack();
+    
+    try {
+      const suggestionId = (action as any).value;
+      const userId = (body as any).user.id;
+      
+      const user = await storage.getUserBySlackId(userId);
+      if (!user) {
+        await respond({
+          text: '❌ User not found in system.',
+          replace_original: false
+        });
+        return;
+      }
+      
+      const suggestion = await storage.getAISuggestion(suggestionId);
+      if (!suggestion) {
+        await respond({
+          text: '❌ AI suggestion not found.',
+          replace_original: false
+        });
+        return;
+      }
+      
+      if (!suggestion.taskId) {
+        await respond({
+          text: '❌ AI suggestion is not linked to a task.',
+          replace_original: false
+        });
+        return;
+      }
+
+      const task = await storage.getTask(suggestion.taskId);
+      if (!task) {
+        await respond({
+          text: '❌ Task not found.',
+          replace_original: false
+        });
+        return;
+      }
+      
+      // Update suggestion status to rejected
+      await storage.updateAISuggestion(suggestionId, {
+        status: 'rejected',
+        approvedBy: user.id,
+        approvedAt: new Date()
+      });
+      
+      // Create audit log
+      await storage.createAudit({
+        entity: 'ai_suggestions',
+        entityId: suggestionId,
+        action: 'ai_suggestions_rejected',
+        actorId: user.id,
+        data: {
+          taskId: task.id,
+          rejectedBy: user.name
+        }
+      });
+      
+      await respond({
+        text: `❌ AI suggestions for task "${task.title}" have been rejected.\n\nThe task will need to be processed manually.`,
+        replace_original: true
+      });
+      
+      console.log(`AI suggestions ${suggestionId} rejected by ${user.name}`);
+    } catch (error) {
+      console.error('Error rejecting AI suggestions:', error);
+      await respond({
+        text: '❌ Failed to reject AI suggestions. Please try again.',
+        replace_original: false
+      });
+    }
+  });
+
+  // View task details action (from AI suggestions)
+  app.action('view_task_details', async ({ action, ack, client, body }) => {
+    await ack();
+    
+    try {
+      const taskId = (action as any).value;
+      const task = await storage.getTask(taskId);
+      
+      if (!task) {
+        return;
+      }
+
+      const assignee = task.assigneeId ? await storage.getUser(task.assigneeId) : null;
+      const suggestions = await storage.getAISuggestionsForTask(taskId);
+      
+      const blocks = [
+        {
+          type: 'header',
+          text: {
+            type: 'plain_text',
+            text: task.title
+          }
+        },
+        {
+          type: 'section',
+          fields: [
+            {
+              type: 'mrkdwn',
+              text: `*Status:* ${task.status}`
+            },
+            {
+              type: 'mrkdwn',
+              text: `*Category:* ${task.category}`
+            },
+            {
+              type: 'mrkdwn',
+              text: `*Assignee:* ${assignee?.name || 'Unassigned'}`
+            },
+            {
+              type: 'mrkdwn',
+              text: `*Due:* ${task.dueAt ? new Date(task.dueAt).toLocaleDateString() : 'No due date'}`
+            }
+          ]
+        }
+      ];
+
+      if (task.sourceUrl) {
+        blocks.push({
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text: `*Source:* <${task.sourceUrl}|View original message>`
+          }
+        });
+      }
+
+      if (task.slaAt) {
+        const slaStatus = new Date(task.slaAt) < new Date() ? '🚨 BREACHED' : 
+                         (new Date(task.slaAt).getTime() - new Date().getTime()) < 5 * 60 * 1000 ? '⚠️ Warning' : '✅ On track';
+        blocks.push({
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text: `*SLA Status:* ${slaStatus}`
+          }
+        });
+      }
+
+      // Add AI suggestions history
+      if (suggestions.length > 0) {
+        blocks.push({
+          type: 'divider'
+        } as any);
+        blocks.push({
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text: `*🤖 AI Suggestions (${suggestions.length}):*`
+          }
+        });
+        
+        suggestions.slice(0, 3).forEach(suggestion => {
+          blocks.push({
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: `• ${suggestion.type} - ${suggestion.status} (${suggestion.confidence}% confidence)\n  ${suggestion.createdAt ? new Date(suggestion.createdAt).toLocaleDateString() : ''}`
+            }
+          });
+        });
+      }
+
+      await client.views.open({
+        trigger_id: (body as any).trigger_id,
+        view: {
+          type: 'modal',
+          title: {
+            type: 'plain_text',
+            text: 'Task Details'
+          },
+          blocks
+        }
+      });
+    } catch (error) {
+      console.error('Error in view_task_details action:', error);
     }
   });
 }

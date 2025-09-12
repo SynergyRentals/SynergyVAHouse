@@ -91,7 +91,7 @@ export const playbooks = pgTable("playbooks", {
 
 export const aiSuggestions = pgTable("ai_suggestions", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  taskId: varchar("task_id").notNull(),
+  taskId: varchar("task_id"), // Allow null for new task suggestions
   type: text("type").notNull(), // 'categorization', 'playbook', 'response_draft'
   suggestions: jsonb("suggestions").notNull(), // AI suggestions data
   appliedSuggestions: jsonb("applied_suggestions"), // Which suggestions were applied
