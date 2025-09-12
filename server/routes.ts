@@ -80,6 +80,98 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // Update user profile
+  app.patch('/api/users/profile', requireAuth as any, async (req: AuthenticatedRequest, res) => {
+    try {
+      if (!req.user?.id) {
+        res.status(401).json({ error: 'Authentication required' });
+        return;
+      }
+
+      const profileUpdateSchema = z.object({
+        name: z.string().min(2, 'Name must be at least 2 characters').optional(),
+        email: z.string().email('Please enter a valid email').optional(),
+        department: z.string().optional(),
+        timezone: z.string().optional(),
+      });
+
+      const validation = profileUpdateSchema.safeParse(req.body);
+      if (!validation.success) {
+        res.status(400).json({ 
+          error: 'Invalid request body',
+          details: validation.error.errors
+        });
+        return;
+      }
+
+      const updatedUser = await storage.upsertUser({
+        id: req.user.id,
+        ...validation.data,
+      });
+
+      res.json({
+        id: updatedUser.id,
+        name: updatedUser.name,
+        email: updatedUser.email,
+        department: updatedUser.department,
+        timezone: updatedUser.timezone,
+      });
+    } catch (error) {
+      console.error('Profile update failed:', error);
+      res.status(500).json({ error: 'Failed to update profile' });
+    }
+  });
+
+  // Update user preferences
+  app.patch('/api/users/preferences', requireAuth as any, async (req: AuthenticatedRequest, res) => {
+    try {
+      if (!req.user?.id) {
+        res.status(401).json({ error: 'Authentication required' });
+        return;
+      }
+
+      const preferencesUpdateSchema = z.object({
+        theme: z.enum(['light', 'dark', 'system']).optional(),
+        notifications: z.boolean().optional(),
+        dashboardLayout: z.enum(['grid', 'list']).optional(),
+      });
+
+      const validation = preferencesUpdateSchema.safeParse(req.body);
+      if (!validation.success) {
+        res.status(400).json({ 
+          error: 'Invalid request body',
+          details: validation.error.errors
+        });
+        return;
+      }
+
+      // Get current user to merge preferences
+      const currentUser = await storage.getUser(req.user.id);
+      if (!currentUser) {
+        res.status(404).json({ error: 'User not found' });
+        return;
+      }
+
+      const currentPreferences = currentUser.preferences || {};
+      const updatedPreferences = {
+        ...currentPreferences,
+        ...validation.data,
+      };
+
+      const updatedUser = await storage.upsertUser({
+        id: req.user.id,
+        preferences: updatedPreferences,
+      });
+
+      res.json({
+        preferences: updatedUser.preferences,
+      });
+    } catch (error) {
+      console.error('Preferences update failed:', error);
+      res.status(500).json({ error: 'Failed to update preferences' });
+    }
+  });
+
   // RBAC API endpoints
   
   // Get current user's permissions
@@ -191,7 +283,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   // Metrics API - RBAC Protected
   app.get('/api/metrics', requireAuth as any, async (req: AuthenticatedRequest, res) => {
     const { requirePermission } = await import('./middleware/rbac');
-    await requirePermission('analytics', 'read')(req, res, async () => {
+    await requirePermission('analytics', 'view_all')(req, res, async () => {
     try {
       const { startDate, endDate, userId } = req.query as any;
       const metrics = await storage.getMetrics(
@@ -209,7 +301,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   // Weekly Scorecard - RBAC Protected
   app.get('/api/metrics/scorecard', requireAuth as any, async (req: AuthenticatedRequest, res) => {
     const { requirePermission } = await import('./middleware/rbac');
-    await requirePermission('analytics', 'read')(req, res, async () => {
+    await requirePermission('analytics', 'view_all')(req, res, async () => {
     try {
       const { generateWeeklyScorecard } = await import('./services/metrics');
       const scorecard = await generateWeeklyScorecard();
@@ -241,7 +333,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   // Recent Audits - RBAC Protected  
   app.get('/api/audits/recent', requireAuth as any, async (req: AuthenticatedRequest, res) => {
     const { requirePermission } = await import('./middleware/rbac');
-    await requirePermission('audits', 'read')(req, res, async () => {
+    await requirePermission('system', 'audit_logs')(req, res, async () => {
     try {
       const { limit = 20 } = req.query as any;
       
@@ -261,7 +353,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   // Audits for specific entity - RBAC Protected
   app.get('/api/audits/:entity/:entityId', requireAuth as any, async (req: AuthenticatedRequest, res) => {
     const { requirePermission } = await import('./middleware/rbac');
-    await requirePermission('audits', 'read')(req, res, async () => {
+    await requirePermission('system', 'audit_logs')(req, res, async () => {
     try {
       const { entity, entityId } = req.params as any;
       const audits = await storage.getAuditsForEntity(entity, entityId);
@@ -275,7 +367,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   // Dashboard stats - RBAC Protected
   app.get('/api/dashboard/stats', requireAuth as any, async (req: AuthenticatedRequest, res) => {
     const { requirePermission } = await import('./middleware/rbac');
-    await requirePermission('analytics', 'read')(req, res, async () => {
+    await requirePermission('analytics', 'view_all')(req, res, async () => {
     try {
       const { userId } = req.query as any;
       

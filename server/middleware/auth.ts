@@ -122,6 +122,15 @@ export async function requireAuth(req: AuthenticatedRequest, res: Response, next
       authType
     };
 
+    // DEVELOPMENT: Ensure permission cache is refreshed for dev-fallback users
+    if (authType === 'dev-fallback') {
+      try {
+        await storage.refreshUserPermissionCache(user.id);
+      } catch (error) {
+        console.warn('[Dev Auth] Failed to refresh permission cache:', error);
+      }
+    }
+
     // Security logging for production
     if (process.env.NODE_ENV === 'production') {
       console.log('[Security] Authenticated request', {

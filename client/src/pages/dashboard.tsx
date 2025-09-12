@@ -16,7 +16,8 @@ import {
   FolderKanban,
   BookOpen,
   BarChart3,
-  KanbanSquare
+  KanbanSquare,
+  Settings
 } from "lucide-react";
 import { SLAMonitor } from "@/components/sla-monitor";
 import { TeamStatus } from "@/components/team-status";
@@ -133,41 +134,33 @@ export default function Dashboard() {
 
           {/* Navigation */}
           <nav className="space-y-2">
-            <Link href="/">
-              <a className="flex items-center space-x-3 px-3 py-2 rounded-lg bg-sidebar-accent text-sidebar-accent-foreground">
-                <Home className="w-5 h-5" />
-                <span className="font-medium">Dashboard</span>
-              </a>
+            <Link href="/" className="flex items-center space-x-3 px-3 py-2 rounded-lg bg-sidebar-accent text-sidebar-accent-foreground">
+              <Home className="w-5 h-5" />
+              <span className="font-medium">Dashboard</span>
             </Link>
-            <Link href="/tasks">
-              <a className="flex items-center space-x-3 px-3 py-2 rounded-lg text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors">
-                <ListTodo className="w-5 h-5" />
-                <span>Tasks</span>
-              </a>
+            <Link href="/tasks" className="flex items-center space-x-3 px-3 py-2 rounded-lg text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors">
+              <ListTodo className="w-5 h-5" />
+              <span>Tasks</span>
             </Link>
-            <Link href="/projects">
-              <a className="flex items-center space-x-3 px-3 py-2 rounded-lg text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors">
-                <FolderKanban className="w-5 h-5" />
-                <span>Projects</span>
-              </a>
+            <Link href="/projects" className="flex items-center space-x-3 px-3 py-2 rounded-lg text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors">
+              <FolderKanban className="w-5 h-5" />
+              <span>Projects</span>
             </Link>
-            <Link href="/kanban">
-              <a className="flex items-center space-x-3 px-3 py-2 rounded-lg text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors">
-                <KanbanSquare className="w-5 h-5" />
-                <span>Kanban</span>
-              </a>
+            <Link href="/kanban" className="flex items-center space-x-3 px-3 py-2 rounded-lg text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors">
+              <KanbanSquare className="w-5 h-5" />
+              <span>Kanban</span>
             </Link>
-            <Link href="/playbooks">
-              <a className="flex items-center space-x-3 px-3 py-2 rounded-lg text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors">
-                <BookOpen className="w-5 h-5" />
-                <span>Playbooks</span>
-              </a>
+            <Link href="/playbooks" className="flex items-center space-x-3 px-3 py-2 rounded-lg text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors">
+              <BookOpen className="w-5 h-5" />
+              <span>Playbooks</span>
             </Link>
-            <Link href="/analytics">
-              <a className="flex items-center space-x-3 px-3 py-2 rounded-lg text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors">
-                <BarChart3 className="w-5 h-5" />
-                <span>Analytics</span>
-              </a>
+            <Link href="/analytics" className="flex items-center space-x-3 px-3 py-2 rounded-lg text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors">
+              <BarChart3 className="w-5 h-5" />
+              <span>Analytics</span>
+            </Link>
+            <Link href="/settings" className="flex items-center space-x-3 px-3 py-2 rounded-lg text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors">
+              <Settings className="w-5 h-5" />
+              <span>Settings</span>
             </Link>
           </nav>
 
