@@ -1,9 +1,13 @@
 import { 
   users, tasks, projects, comments, audits, metricRollups, playbooks, aiSuggestions,
+  roles, permissions, rolePermissions, userRoles,
   type User, type InsertUser, type UpsertUser, type Task, type InsertTask, 
   type Project, type InsertProject, type Comment, type InsertComment,
   type Audit, type InsertAudit, type Playbook, type InsertPlaybook,
-  type AISuggestion, type InsertAISuggestion
+  type AISuggestion, type InsertAISuggestion,
+  type Role, type InsertRole, type Permission, type InsertPermission,
+  type RolePermission, type InsertRolePermission, type UserRole, type InsertUserRole,
+  type UserPermissions
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, gte, lte, sql } from "drizzle-orm";
@@ -56,6 +60,37 @@ export interface IStorage {
   getAISuggestionsForTask(taskId: string): Promise<AISuggestion[]>;
   createAISuggestion(suggestion: InsertAISuggestion): Promise<AISuggestion>;
   updateAISuggestion(id: string, updates: Partial<AISuggestion>): Promise<AISuggestion>;
+
+  // RBAC - Roles
+  getRole(id: string): Promise<Role | undefined>;
+  getRoleByName(name: string): Promise<Role | undefined>;
+  getRoles(): Promise<Role[]>;
+  createRole(role: InsertRole): Promise<Role>;
+  updateRole(id: string, updates: Partial<Role>): Promise<Role>;
+  deactivateRole(id: string): Promise<Role>;
+
+  // RBAC - Permissions
+  getPermission(id: string): Promise<Permission | undefined>;
+  getPermissionsByResourceAction(resource: string, action: string): Promise<Permission[]>;
+  getPermissions(): Promise<Permission[]>;
+  createPermission(permission: InsertPermission): Promise<Permission>;
+  updatePermission(id: string, updates: Partial<Permission>): Promise<Permission>;
+
+  // RBAC - Role Permissions
+  getRolePermissions(roleId: string): Promise<RolePermission[]>;
+  createRolePermission(rolePermission: InsertRolePermission): Promise<RolePermission>;
+  removeRolePermission(roleId: string, permissionId: string): Promise<void>;
+
+  // RBAC - User Roles
+  getUserRoles(userId: string): Promise<UserRole[]>;
+  assignRoleToUser(userRole: InsertUserRole): Promise<UserRole>;
+  removeRoleFromUser(userId: string, roleId: string): Promise<void>;
+
+  // RBAC - Permission Computation and Caching
+  computeUserPermissions(userId: string): Promise<UserPermissions>;
+  refreshUserPermissionCache(userId: string): Promise<void>;
+  getUserPermissionsFromCache(userId: string): Promise<UserPermissions | null>;
+  hasPermission(userId: string, resource: string, action: string): Promise<boolean>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -288,6 +323,207 @@ export class DatabaseStorage implements IStorage {
       .where(eq(aiSuggestions.id, id))
       .returning();
     return suggestion;
+  }
+
+  // RBAC - Roles
+  async getRole(id: string): Promise<Role | undefined> {
+    const [role] = await db.select().from(roles).where(eq(roles.id, id));
+    return role || undefined;
+  }
+
+  async getRoleByName(name: string): Promise<Role | undefined> {
+    const [role] = await db.select().from(roles).where(eq(roles.name, name));
+    return role || undefined;
+  }
+
+  async getRoles(): Promise<Role[]> {
+    return await db.select().from(roles).where(eq(roles.isActive, true)).orderBy(roles.name);
+  }
+
+  async createRole(insertRole: InsertRole): Promise<Role> {
+    const [role] = await db.insert(roles).values(insertRole).returning();
+    return role;
+  }
+
+  async updateRole(id: string, updates: Partial<Role>): Promise<Role> {
+    const [role] = await db.update(roles)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(roles.id, id))
+      .returning();
+    return role;
+  }
+
+  async deactivateRole(id: string): Promise<Role> {
+    const [role] = await db.update(roles)
+      .set({ isActive: false, updatedAt: new Date() })
+      .where(eq(roles.id, id))
+      .returning();
+    return role;
+  }
+
+  // RBAC - Permissions
+  async getPermission(id: string): Promise<Permission | undefined> {
+    const [permission] = await db.select().from(permissions).where(eq(permissions.id, id));
+    return permission || undefined;
+  }
+
+  async getPermissionsByResourceAction(resource: string, action: string): Promise<Permission[]> {
+    return await db.select().from(permissions)
+      .where(and(eq(permissions.resource, resource), eq(permissions.action, action)));
+  }
+
+  async getPermissions(): Promise<Permission[]> {
+    return await db.select().from(permissions).orderBy(permissions.resource, permissions.action);
+  }
+
+  async createPermission(insertPermission: InsertPermission): Promise<Permission> {
+    const [permission] = await db.insert(permissions).values(insertPermission).returning();
+    return permission;
+  }
+
+  async updatePermission(id: string, updates: Partial<Permission>): Promise<Permission> {
+    const [permission] = await db.update(permissions)
+      .set(updates)
+      .where(eq(permissions.id, id))
+      .returning();
+    return permission;
+  }
+
+  // RBAC - Role Permissions
+  async getRolePermissions(roleId: string): Promise<RolePermission[]> {
+    return await db.select().from(rolePermissions)
+      .where(eq(rolePermissions.roleId, roleId))
+      .orderBy(rolePermissions.createdAt);
+  }
+
+  async createRolePermission(insertRolePermission: InsertRolePermission): Promise<RolePermission> {
+    const [rolePermission] = await db.insert(rolePermissions).values(insertRolePermission).returning();
+    return rolePermission;
+  }
+
+  async removeRolePermission(roleId: string, permissionId: string): Promise<void> {
+    await db.delete(rolePermissions)
+      .where(and(eq(rolePermissions.roleId, roleId), eq(rolePermissions.permissionId, permissionId)));
+  }
+
+  // RBAC - User Roles
+  async getUserRoles(userId: string): Promise<UserRole[]> {
+    return await db.select().from(userRoles)
+      .where(eq(userRoles.userId, userId))
+      .orderBy(userRoles.assignedAt);
+  }
+
+  async assignRoleToUser(insertUserRole: InsertUserRole): Promise<UserRole> {
+    const [userRole] = await db.insert(userRoles).values(insertUserRole).returning();
+    return userRole;
+  }
+
+  async removeRoleFromUser(userId: string, roleId: string): Promise<void> {
+    await db.delete(userRoles)
+      .where(and(eq(userRoles.userId, userId), eq(userRoles.roleId, roleId)));
+  }
+
+  // RBAC - Permission Computation and Caching
+  async computeUserPermissions(userId: string): Promise<UserPermissions> {
+    try {
+      // Get all user roles
+      const userRolesList = await this.getUserRoles(userId);
+      if (userRolesList.length === 0) {
+        return {};
+      }
+
+      const roleIds = userRolesList.map(ur => ur.roleId);
+
+      // Get all permissions for these roles
+      const permissionQuery = await db
+        .select({
+          resource: permissions.resource,
+          action: permissions.action,
+        })
+        .from(rolePermissions)
+        .innerJoin(permissions, eq(rolePermissions.permissionId, permissions.id))
+        .innerJoin(roles, eq(rolePermissions.roleId, roles.id))
+        .where(and(
+          sql`${rolePermissions.roleId} IN (${sql.join(roleIds.map(id => sql`${id}`), sql`, `)})`,
+          eq(roles.isActive, true)
+        ));
+
+      // Group permissions by resource
+      const groupedPermissions: UserPermissions = {};
+      
+      for (const perm of permissionQuery) {
+        if (!groupedPermissions[perm.resource]) {
+          groupedPermissions[perm.resource] = [];
+        }
+        if (!groupedPermissions[perm.resource].includes(perm.action)) {
+          groupedPermissions[perm.resource].push(perm.action);
+        }
+      }
+
+      return groupedPermissions;
+    } catch (error) {
+      console.error(`Failed to compute permissions for user ${userId}:`, error);
+      return {};
+    }
+  }
+
+  async refreshUserPermissionCache(userId: string): Promise<void> {
+    try {
+      const computedPermissions = await this.computeUserPermissions(userId);
+      
+      await db.update(users)
+        .set({ 
+          permissions: computedPermissions,
+          updatedAt: new Date()
+        })
+        .where(eq(users.id, userId));
+
+      console.log(`Refreshed permission cache for user: ${userId}`);
+    } catch (error) {
+      console.error(`Failed to refresh permission cache for user ${userId}:`, error);
+      throw error;
+    }
+  }
+
+  async getUserPermissionsFromCache(userId: string): Promise<UserPermissions | null> {
+    try {
+      const [user] = await db.select({ permissions: users.permissions })
+        .from(users)
+        .where(eq(users.id, userId));
+      
+      if (!user || !user.permissions) {
+        return null;
+      }
+
+      return user.permissions as UserPermissions;
+    } catch (error) {
+      console.error(`Failed to get cached permissions for user ${userId}:`, error);
+      return null;
+    }
+  }
+
+  async hasPermission(userId: string, resource: string, action: string): Promise<boolean> {
+    try {
+      // First try to get from cache
+      let userPermissions = await this.getUserPermissionsFromCache(userId);
+      
+      // If not in cache, compute and cache it
+      if (!userPermissions) {
+        userPermissions = await this.computeUserPermissions(userId);
+        await this.refreshUserPermissionCache(userId);
+      }
+
+      // Check if user has the specific permission
+      const resourcePermissions = userPermissions[resource];
+      if (!resourcePermissions) {
+        return false;
+      }
+
+      return resourcePermissions.includes(action);
+    } catch (error) {
+      console.error(`Failed to check permission for user ${userId}:`, error);
+      return false;
+    }
   }
 }
 

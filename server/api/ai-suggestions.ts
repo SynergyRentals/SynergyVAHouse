@@ -2,11 +2,12 @@ import type { Express } from "express";
 import { generateTaskSuggestions, improveResponseDraft, generateFollowUpSuggestions } from "../services/ai-suggestions";
 import { storage } from "../storage";
 import { requireAuth, requireManagerRole, getAuthenticatedUserId, type AuthenticatedRequest } from "../middleware/auth";
+import { requirePermission } from "../middleware/rbac";
 
 export async function registerAISuggestionsAPI(app: Express): Promise<void> {
   
-  // Generate AI suggestions for a task
-  app.post('/api/ai/suggest-task', requireAuth, async (req: AuthenticatedRequest, res) => {
+  // Generate AI suggestions for a task - RBAC Protected
+  app.post('/api/ai/suggest-task', requireAuth as any, requirePermission('ai', 'suggest'), async (req: AuthenticatedRequest, res) => {
     try {
       const { taskTitle, taskDescription, sourceContext, taskId } = req.body as {
         taskTitle: string;
@@ -36,8 +37,8 @@ export async function registerAISuggestionsAPI(app: Express): Promise<void> {
     }
   });
 
-  // Generate AI suggestions for an existing task
-  app.post('/api/ai/suggest-for-task/:taskId', requireAuth, async (req: AuthenticatedRequest, res) => {
+  // Generate AI suggestions for an existing task - RBAC Protected
+  app.post('/api/ai/suggest-for-task/:taskId', requireAuth as any, requirePermission('ai', 'suggest'), async (req: AuthenticatedRequest, res) => {
     try {
       const { taskId } = req.params as { taskId: string };
       
@@ -67,8 +68,8 @@ export async function registerAISuggestionsAPI(app: Express): Promise<void> {
     }
   });
 
-  // Improve a response draft based on feedback
-  app.post('/api/ai/improve-response', requireAuth, async (req: AuthenticatedRequest, res) => {
+  // Improve a response draft based on feedback - RBAC Protected
+  app.post('/api/ai/improve-response', requireAuth as any, requirePermission('ai', 'improve'), async (req: AuthenticatedRequest, res) => {
     try {
       const { originalDraft, feedback, taskContext } = req.body as {
         originalDraft: string;
@@ -94,8 +95,8 @@ export async function registerAISuggestionsAPI(app: Express): Promise<void> {
     }
   });
 
-  // Generate follow-up suggestions for completed tasks
-  app.post('/api/ai/suggest-followups', async (req, res) => {
+  // Generate follow-up suggestions for completed tasks - RBAC Protected
+  app.post('/api/ai/suggest-followups', requireAuth as any, requirePermission('ai', 'suggest'), async (req: AuthenticatedRequest, res) => {
     try {
       const { taskTitle, taskDescription, completedActions } = req.body as {
         taskTitle: string;
@@ -121,8 +122,8 @@ export async function registerAISuggestionsAPI(app: Express): Promise<void> {
     }
   });
 
-  // Apply AI suggestions to a task (update category/playbook)
-  app.post('/api/ai/apply-suggestions/:taskId', requireAuth, async (req: AuthenticatedRequest, res) => {
+  // Apply AI suggestions to a task - RBAC Protected
+  app.post('/api/ai/apply-suggestions/:taskId', requireAuth as any, requirePermission('ai', 'apply'), async (req: AuthenticatedRequest, res) => {
     try {
       const { taskId } = req.params as { taskId: string };
       const { category, playbookKey } = req.body as {

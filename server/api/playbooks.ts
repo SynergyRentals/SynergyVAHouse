@@ -1,10 +1,12 @@
 import type { Express } from "express";
 import { storage } from "../storage";
 import { insertPlaybookSchema } from "@shared/schema";
+import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
+import { requirePermission } from "../middleware/rbac";
 
 export async function registerPlaybooksAPI(app: Express) {
-  // Get all playbooks
-  app.get('/api/playbooks', async (req, res) => {
+  // Get all playbooks - RBAC Protected
+  app.get('/api/playbooks', requireAuth as any, requirePermission('playbooks', 'read'), async (req: AuthenticatedRequest, res) => {
     try {
       const playbooks = await storage.getPlaybooks();
       res.json(playbooks.map(playbook => ({
@@ -18,8 +20,8 @@ export async function registerPlaybooksAPI(app: Express) {
     }
   });
 
-  // Get single playbook
-  app.get('/api/playbooks/:key', async (req, res) => {
+  // Get single playbook - RBAC Protected
+  app.get('/api/playbooks/:key', requireAuth as any, requirePermission('playbooks', 'read'), async (req: AuthenticatedRequest, res) => {
     try {
       const { key } = req.params as { key: string };
       const playbook = await storage.getPlaybook(key);
@@ -40,8 +42,8 @@ export async function registerPlaybooksAPI(app: Express) {
     }
   });
 
-  // Create playbook
-  app.post('/api/playbooks', async (req, res) => {
+  // Create playbook - RBAC Protected
+  app.post('/api/playbooks', requireAuth as any, requirePermission('playbooks', 'create'), async (req: AuthenticatedRequest, res) => {
     try {
       const playbookData = insertPlaybookSchema.parse(req.body);
       const playbook = await storage.createPlaybook(playbookData);
@@ -60,8 +62,8 @@ export async function registerPlaybooksAPI(app: Express) {
     }
   });
 
-  // Update playbook
-  app.patch('/api/playbooks/:key', async (req, res) => {
+  // Update playbook - RBAC Protected
+  app.patch('/api/playbooks/:key', requireAuth as any, requirePermission('playbooks', 'update'), async (req: AuthenticatedRequest, res) => {
     try {
       const { key } = req.params as { key: string };
       const updates = req.body as any;
@@ -88,8 +90,8 @@ export async function registerPlaybooksAPI(app: Express) {
     }
   });
 
-  // Get playbook by category
-  app.get('/api/playbooks/category/:category', async (req, res) => {
+  // Get playbook by category - RBAC Protected
+  app.get('/api/playbooks/category/:category', requireAuth as any, requirePermission('playbooks', 'read'), async (req: AuthenticatedRequest, res) => {
     try {
       const { category } = req.params as { category: string };
       const playbooks = await storage.getPlaybooks();
@@ -107,8 +109,8 @@ export async function registerPlaybooksAPI(app: Express) {
     }
   });
 
-  // Validate playbook DoD requirements
-  app.post('/api/playbooks/:key/validate-dod', async (req, res) => {
+  // Validate playbook DoD requirements - RBAC Protected
+  app.post('/api/playbooks/:key/validate-dod', requireAuth as any, requirePermission('playbooks', 'read'), async (req: AuthenticatedRequest, res) => {
     try {
       const { key } = req.params as { key: string };
       const evidence = req.body as any;

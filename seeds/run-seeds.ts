@@ -1,6 +1,7 @@
 import { seedUsers } from './seed_users';
 import { seedPlaybooks } from './seed_playbooks';
 import { seedChecklists } from './seed_checklists';
+import { seedRBAC } from './seed_rbac';
 
 async function runAllSeeds() {
   try {
@@ -9,6 +10,7 @@ async function runAllSeeds() {
     await seedUsers();
     await seedPlaybooks();
     await seedChecklists();
+    await seedRBAC();
     
     console.log('✨ All seeds completed successfully!');
     process.exit(0);

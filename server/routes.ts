@@ -9,6 +9,7 @@ import { setupConduitWebhooks } from "./webhooks/conduit";
 import { setupSuiteOpWebhooks } from "./webhooks/suiteop";
 import { setupAuth, isAuthenticated } from "./replitAuth";
 import { requireReplitAuth, requireAuth, type AuthenticatedRequest } from "./middleware/auth";
+import { z } from "zod";
 
 export async function registerRoutes(app: Express): Promise<void> {
   // Setup Replit Auth middleware first
@@ -79,8 +80,118 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
-  // Metrics API
-  app.get('/api/metrics', async (req, res) => {
+  // RBAC API endpoints
+  
+  // Get current user's permissions
+  app.get('/api/auth/permissions', requireAuth as any, async (req: AuthenticatedRequest, res) => {
+    const { getUserPermissions } = await import('./middleware/rbac');
+    await getUserPermissions(req, res);
+  });
+
+  // Get all roles (admin only)
+  app.get('/api/rbac/roles', requireAuth as any, async (req, res) => {
+    try {
+      const { requirePermission } = await import('./middleware/rbac');
+      await requirePermission('users', 'manage_roles')(req as AuthenticatedRequest, res, async () => {
+        const roles = await storage.getRoles();
+        res.json(roles);
+      });
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to fetch roles' });
+    }
+  });
+
+  // Get all permissions (admin only)
+  app.get('/api/rbac/permissions', requireAuth as any, async (req, res) => {
+    try {
+      const { requirePermission } = await import('./middleware/rbac');
+      await requirePermission('users', 'manage_roles')(req as AuthenticatedRequest, res, async () => {
+        const permissions = await storage.getPermissions();
+        res.json(permissions);
+      });
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to fetch permissions' });
+    }
+  });
+
+  // Assign role to user (admin only)
+  app.post('/api/rbac/users/:userId/roles', requireAuth as any, async (req: AuthenticatedRequest, res) => {
+    try {
+      const { requirePermission } = await import('./middleware/rbac');
+      await requirePermission('users', 'manage_roles')(req, res, async () => {
+        const { userId } = req.params;
+        
+        // Validate request body
+        const assignRoleSchema = z.object({
+          roleId: z.string().uuid('Role ID must be a valid UUID')
+        });
+        
+        const validation = assignRoleSchema.safeParse(req.body);
+        if (!validation.success) {
+          res.status(400).json({ 
+            error: 'Invalid request body',
+            details: validation.error.errors
+          });
+          return;
+        }
+        
+        const { roleId } = validation.data;
+
+        const userRole = await storage.assignRoleToUser({
+          userId,
+          roleId,
+          assignedBy: req.user!.id,
+          assignedAt: new Date()
+        });
+
+        // Refresh user's permission cache
+        await storage.refreshUserPermissionCache(userId);
+
+        res.json(userRole);
+      });
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to assign role' });
+    }
+  });
+
+  // Remove role from user (admin only)
+  app.delete('/api/rbac/users/:userId/roles/:roleId', requireAuth as any, async (req: AuthenticatedRequest, res) => {
+    try {
+      const { requirePermission } = await import('./middleware/rbac');
+      await requirePermission('users', 'manage_roles')(req, res, async () => {
+        const { userId, roleId } = req.params;
+        
+        // Validate UUID parameters
+        const paramSchema = z.object({
+          userId: z.string().uuid('User ID must be a valid UUID'),
+          roleId: z.string().uuid('Role ID must be a valid UUID')
+        });
+        
+        const validation = paramSchema.safeParse({ userId, roleId });
+        if (!validation.success) {
+          res.status(400).json({ 
+            error: 'Invalid parameters',
+            details: validation.error.errors
+          });
+          return;
+        }
+        
+        await storage.removeRoleFromUser(userId, roleId);
+        
+        // Refresh user's permission cache
+        await storage.refreshUserPermissionCache(userId);
+
+        res.json({ success: true });
+      });
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to remove role' });
+    }
+  });
+
+  // Metrics API - RBAC Protected
+  app.get('/api/metrics', requireAuth as any, async (req: AuthenticatedRequest, res) => {
+    const { requirePermission } = await import('./middleware/rbac');
+    await requirePermission('analytics', 'read')(req, res, async () => {
     try {
       const { startDate, endDate, userId } = req.query as any;
       const metrics = await storage.getMetrics(
@@ -92,10 +203,13 @@ export async function registerRoutes(app: Express): Promise<void> {
     } catch (error) {
       res.status(500).json({ error: 'Failed to fetch metrics' });
     }
+    });
   });
 
-  // Weekly Scorecard
-  app.get('/api/metrics/scorecard', async (req, res) => {
+  // Weekly Scorecard - RBAC Protected
+  app.get('/api/metrics/scorecard', requireAuth as any, async (req: AuthenticatedRequest, res) => {
+    const { requirePermission } = await import('./middleware/rbac');
+    await requirePermission('analytics', 'read')(req, res, async () => {
     try {
       const { generateWeeklyScorecard } = await import('./services/metrics');
       const scorecard = await generateWeeklyScorecard();
@@ -103,10 +217,13 @@ export async function registerRoutes(app: Express): Promise<void> {
     } catch (error) {
       res.status(500).json({ error: 'Failed to generate scorecard' });
     }
+    });
   });
 
-  // Export Scorecard
-  app.post('/api/metrics/export', async (req, res) => {
+  // Export Scorecard - RBAC Protected
+  app.post('/api/metrics/export', requireAuth as any, async (req: AuthenticatedRequest, res) => {
+    const { requirePermission } = await import('./middleware/rbac');
+    await requirePermission('analytics', 'export')(req, res, async () => {
     try {
       const { exportScorecardToSheets } = await import('./services/metrics');
       const { scorecard } = req.body as any;
@@ -118,10 +235,13 @@ export async function registerRoutes(app: Express): Promise<void> {
     } catch (error) {
       res.status(500).json({ error: 'Failed to export scorecard' });
     }
+    });
   });
 
-  // Recent Audits
-  app.get('/api/audits/recent', async (req, res) => {
+  // Recent Audits - RBAC Protected  
+  app.get('/api/audits/recent', requireAuth as any, async (req: AuthenticatedRequest, res) => {
+    const { requirePermission } = await import('./middleware/rbac');
+    await requirePermission('audits', 'read')(req, res, async () => {
     try {
       const { limit = 20 } = req.query as any;
       
@@ -135,10 +255,13 @@ export async function registerRoutes(app: Express): Promise<void> {
     } catch (error) {
       res.status(500).json({ error: 'Failed to fetch recent audits' });
     }
+    });
   });
 
-  // Audits for specific entity
-  app.get('/api/audits/:entity/:entityId', async (req, res) => {
+  // Audits for specific entity - RBAC Protected
+  app.get('/api/audits/:entity/:entityId', requireAuth as any, async (req: AuthenticatedRequest, res) => {
+    const { requirePermission } = await import('./middleware/rbac');
+    await requirePermission('audits', 'read')(req, res, async () => {
     try {
       const { entity, entityId } = req.params as any;
       const audits = await storage.getAuditsForEntity(entity, entityId);
@@ -146,10 +269,13 @@ export async function registerRoutes(app: Express): Promise<void> {
     } catch (error) {
       res.status(500).json({ error: 'Failed to fetch audits' });
     }
+    });
   });
 
-  // Dashboard stats with enhanced calculations
-  app.get('/api/dashboard/stats', async (req, res) => {
+  // Dashboard stats - RBAC Protected
+  app.get('/api/dashboard/stats', requireAuth as any, async (req: AuthenticatedRequest, res) => {
+    const { requirePermission } = await import('./middleware/rbac');
+    await requirePermission('analytics', 'read')(req, res, async () => {
     try {
       const { userId } = req.query as any;
       
@@ -185,5 +311,6 @@ export async function registerRoutes(app: Express): Promise<void> {
     } catch (error) {
       res.status(500).json({ error: 'Failed to fetch dashboard stats' });
     }
+    });
   });
 }

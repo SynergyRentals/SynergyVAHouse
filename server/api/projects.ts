@@ -1,10 +1,12 @@
 import type { Express } from "express";
 import { storage } from "../storage";
 import { insertProjectSchema } from "@shared/schema";
+import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
+import { requirePermission } from "../middleware/rbac";
 
 export async function registerProjectsAPI(app: Express) {
-  // Get all projects
-  app.get('/api/projects', async (req, res) => {
+  // Get all projects - RBAC Protected
+  app.get('/api/projects', requireAuth as any, requirePermission('projects', 'read'), async (req: AuthenticatedRequest, res) => {
     try {
       const projects = await storage.getProjects();
       
@@ -35,8 +37,8 @@ export async function registerProjectsAPI(app: Express) {
     }
   });
 
-  // Get single project
-  app.get('/api/projects/:id', async (req, res) => {
+  // Get single project - RBAC Protected
+  app.get('/api/projects/:id', requireAuth as any, requirePermission('projects', 'read'), async (req: AuthenticatedRequest, res) => {
     try {
       const { id } = req.params as { id: string };
       const project = await storage.getProject(id);
@@ -70,8 +72,8 @@ export async function registerProjectsAPI(app: Express) {
     }
   });
 
-  // Create project
-  app.post('/api/projects', async (req, res) => {
+  // Create project - RBAC Protected
+  app.post('/api/projects', requireAuth as any, requirePermission('projects', 'create'), async (req: AuthenticatedRequest, res) => {
     try {
       const projectData = insertProjectSchema.parse(req.body);
       const project = await storage.createProject(projectData);
@@ -90,8 +92,8 @@ export async function registerProjectsAPI(app: Express) {
     }
   });
 
-  // Update project
-  app.patch('/api/projects/:id', async (req, res) => {
+  // Update project - RBAC Protected
+  app.patch('/api/projects/:id', requireAuth as any, requirePermission('projects', 'update'), async (req: AuthenticatedRequest, res) => {
     try {
       const { id } = req.params as { id: string };
       const updates = req.body as any;
@@ -118,8 +120,8 @@ export async function registerProjectsAPI(app: Express) {
     }
   });
 
-  // Get project progress
-  app.get('/api/projects/:id/progress', async (req, res) => {
+  // Get project progress - RBAC Protected
+  app.get('/api/projects/:id/progress', requireAuth as any, requirePermission('projects', 'read'), async (req: AuthenticatedRequest, res) => {
     try {
       const { id } = req.params as { id: string };
       const project = await storage.getProject(id);

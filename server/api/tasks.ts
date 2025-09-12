@@ -2,6 +2,8 @@ import type { Express } from "express";
 import { storage } from "../storage";
 import { insertTaskSchema } from "@shared/schema";
 import { z } from "zod";
+import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
+import { requirePermission } from "../middleware/rbac";
 
 // Category to playbook key mapping (shared function)
 function getCategoryPlaybookMapping(): Record<string, string> {
@@ -96,8 +98,8 @@ async function validateTaskDoD(task: any, evidence: any = {}) {
 }
 
 export async function registerTasksAPI(app: Express) {
-  // Get tasks with filters
-  app.get('/api/tasks', async (req, res) => {
+  // Get tasks with filters - RBAC Protected
+  app.get('/api/tasks', requireAuth as any, requirePermission('tasks', 'read'), async (req: AuthenticatedRequest, res) => {
     try {
       const querySchema = z.object({
         status: z.string().optional(),
@@ -157,8 +159,8 @@ export async function registerTasksAPI(app: Express) {
     }
   });
 
-  // Get task statistics (without userId - for dashboard)
-  app.get('/api/tasks/stats', async (req, res) => {
+  // Get task statistics - RBAC Protected 
+  app.get('/api/tasks/stats', requireAuth as any, requirePermission('tasks', 'read'), async (req: AuthenticatedRequest, res) => {
     try {
       const { userId } = req.query as { userId?: string };
       const filters = userId ? { assigneeId: userId } : {};
@@ -241,8 +243,8 @@ export async function registerTasksAPI(app: Express) {
     }
   });
 
-  // Get single task
-  app.get('/api/tasks/:id', async (req, res) => {
+  // Get single task - RBAC Protected
+  app.get('/api/tasks/:id', requireAuth as any, requirePermission('tasks', 'read'), async (req: AuthenticatedRequest, res) => {
     try {
       const { id } = req.params as { id: string };
       const task = await storage.getTask(id);
@@ -268,8 +270,8 @@ export async function registerTasksAPI(app: Express) {
     }
   });
 
-  // Create task
-  app.post('/api/tasks', async (req, res) => {
+  // Create task - RBAC Protected
+  app.post('/api/tasks', requireAuth as any, requirePermission('tasks', 'create'), async (req: AuthenticatedRequest, res) => {
     try {
       let taskData = insertTaskSchema.parse(req.body);
       
@@ -320,7 +322,7 @@ export async function registerTasksAPI(app: Express) {
         entity: 'task',
         entityId: task.id,
         action: 'created',
-        actorId: taskData.createdBy || undefined,
+        actorId: req.user?.id || taskData.createdBy || undefined,
         data: { task }
       });
 
@@ -340,8 +342,8 @@ export async function registerTasksAPI(app: Express) {
     }
   });
 
-  // Update task
-  app.patch('/api/tasks/:id', async (req, res) => {
+  // Update task - RBAC Protected
+  app.patch('/api/tasks/:id', requireAuth as any, requirePermission('tasks', 'update'), async (req: AuthenticatedRequest, res) => {
     try {
       const { id } = req.params as { id: string };
       const updates = req.body as any;
@@ -422,8 +424,8 @@ export async function registerTasksAPI(app: Express) {
     }
   });
 
-  // Delete task
-  app.delete('/api/tasks/:id', async (req, res) => {
+  // Delete task - RBAC Protected
+  app.delete('/api/tasks/:id', requireAuth as any, requirePermission('tasks', 'delete'), async (req: AuthenticatedRequest, res) => {
     try {
       const { id } = req.params as { id: string };
       
@@ -450,8 +452,8 @@ export async function registerTasksAPI(app: Express) {
     }
   });
 
-  // Add comment to task
-  app.post('/api/tasks/:id/comments', async (req, res) => {
+  // Add comment to task - RBAC Protected
+  app.post('/api/tasks/:id/comments', requireAuth as any, requirePermission('tasks', 'comment'), async (req: AuthenticatedRequest, res) => {
     try {
       const { id } = req.params as { id: string };
       const { body, authorId } = req.body as any;
@@ -475,8 +477,8 @@ export async function registerTasksAPI(app: Express) {
     }
   });
 
-  // Validate DoD for a specific task
-  app.post('/api/tasks/:id/validate-dod', async (req, res) => {
+  // Validate DoD for a specific task - RBAC Protected
+  app.post('/api/tasks/:id/validate-dod', requireAuth as any, requirePermission('tasks', 'read'), async (req: AuthenticatedRequest, res) => {
     try {
       const { id } = req.params as { id: string };
       const evidence = req.body as any;
@@ -496,8 +498,8 @@ export async function registerTasksAPI(app: Express) {
     }
   });
 
-  // Update task evidence
-  app.patch('/api/tasks/:id/evidence', async (req, res) => {
+  // Update task evidence - RBAC Protected
+  app.patch('/api/tasks/:id/evidence', requireAuth as any, requirePermission('tasks', 'update'), async (req: AuthenticatedRequest, res) => {
     try {
       const { id } = req.params as { id: string };
       const evidenceUpdate = req.body as any;
