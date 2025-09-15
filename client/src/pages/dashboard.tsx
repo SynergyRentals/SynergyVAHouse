@@ -1,24 +1,14 @@
 import { useState } from "react";
-import { useAuth } from "@/hooks/useAuth";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
-import { Link } from "wouter";
 import { 
   CheckCircle, 
   Clock, 
   AlertTriangle, 
-  XCircle, 
-  Bell,
-  Home,
-  ListTodo,
-  FolderKanban,
-  BookOpen,
-  BarChart3,
-  KanbanSquare,
-  Settings
+  XCircle,
+  ListTodo
 } from "lucide-react";
 import { SLAMonitor } from "@/components/sla-monitor";
 import { TeamStatus } from "@/components/team-status";
@@ -52,7 +42,6 @@ export default function Dashboard() {
   const [viewMode, setViewMode] = useState<'va' | 'manager'>('va');
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [isCreatingTask, setIsCreatingTask] = useState(false);
-  const { user, isLoading: authLoading, isAuthenticated } = useAuth();
 
   const { data: stats, isLoading: statsLoading } = useQuery<DashboardStats>({
     queryKey: ['/api/tasks/stats'],
@@ -94,9 +83,9 @@ export default function Dashboard() {
     return { type: 'ok', text: '✅ On track', class: 'text-green-600' };
   };
 
-  if (authLoading || statsLoading || tasksLoading) {
+  if (statsLoading || tasksLoading) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
+      <div className="p-6 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
           <p className="text-muted-foreground">Loading dashboard...</p>
@@ -105,182 +94,60 @@ export default function Dashboard() {
     );
   }
 
-  if (!isAuthenticated) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold mb-4">Authentication Required</h1>
-          <p className="text-muted-foreground mb-6">Please log in to access the VA Operations Hub</p>
-          <a 
-            href="/api/login" 
-            className="inline-flex items-center px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
-            data-testid="button-login"
-          >
-            Log in with Replit
-          </a>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className="flex h-screen overflow-hidden bg-background">
-      {/* Sidebar */}
-      <div className="w-64 bg-sidebar border-r border-sidebar-border flex-shrink-0">
-        <div className="p-6">
-          <div className="flex items-center space-x-3 mb-8">
-            <div className="w-10 h-10 bg-primary rounded-lg flex items-center justify-center">
-              <span className="text-primary-foreground font-bold text-lg">S</span>
-            </div>
-            <div>
-              <h1 className="text-sidebar-foreground font-semibold text-lg">Synergy VA Ops</h1>
-              <p className="text-sidebar-foreground/60 text-sm">Operations Hub</p>
-            </div>
-          </div>
-
-          {/* User Profile */}
-          <div className="mb-6 p-4 bg-sidebar-accent rounded-lg">
-            <div className="flex items-center space-x-3">
-              <div className="w-8 h-8 bg-sidebar-primary rounded-full flex items-center justify-center">
-                <span className="text-sidebar-primary-foreground text-sm font-medium">
-                  {user?.name?.charAt(0) || user?.firstName?.charAt(0) || 'U'}
-                </span>
-              </div>
-              <div>
-                <div className="text-sidebar-foreground font-medium text-sm" data-testid="text-username">
-                  {user?.name || `${user?.firstName} ${user?.lastName}` || 'User'}
-                </div>
-                <div className="text-sidebar-foreground/60 text-xs" data-testid="text-user-role">
-                  {user?.role || 'Team Member'} {user?.department && `• ${user?.department}`}
-                </div>
-                <div className="text-sidebar-foreground/60 text-xs">
-                  Manila: {new Date().toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' })}
-                </div>
-              </div>
-            </div>
-            <div className="mt-3 pt-3 border-t border-sidebar-border">
-              <a 
-                href="/api/logout" 
-                className="text-xs text-sidebar-foreground/80 hover:text-sidebar-foreground transition-colors"
-                data-testid="link-logout"
-              >
-                Log out
-              </a>
-            </div>
-          </div>
-
-          {/* Navigation */}
-          <nav className="space-y-2">
-            <Link href="/" className="flex items-center space-x-3 px-3 py-2 rounded-lg bg-sidebar-accent text-sidebar-accent-foreground">
-              <Home className="w-5 h-5" />
-              <span className="font-medium">Dashboard</span>
-            </Link>
-            <Link href="/tasks" className="flex items-center space-x-3 px-3 py-2 rounded-lg text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors">
-              <ListTodo className="w-5 h-5" />
-              <span>Tasks</span>
-            </Link>
-            <Link href="/projects" className="flex items-center space-x-3 px-3 py-2 rounded-lg text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors">
-              <FolderKanban className="w-5 h-5" />
-              <span>Projects</span>
-            </Link>
-            <Link href="/kanban" className="flex items-center space-x-3 px-3 py-2 rounded-lg text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors">
-              <KanbanSquare className="w-5 h-5" />
-              <span>Kanban</span>
-            </Link>
-            <Link href="/playbooks" className="flex items-center space-x-3 px-3 py-2 rounded-lg text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors">
-              <BookOpen className="w-5 h-5" />
-              <span>Playbooks</span>
-            </Link>
-            <Link href="/analytics" className="flex items-center space-x-3 px-3 py-2 rounded-lg text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors">
-              <BarChart3 className="w-5 h-5" />
-              <span>Analytics</span>
-            </Link>
-            <Link href="/settings" className="flex items-center space-x-3 px-3 py-2 rounded-lg text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors">
-              <Settings className="w-5 h-5" />
-              <span>Settings</span>
-            </Link>
-          </nav>
-
-          {/* Quick Actions */}
-          <div className="mt-8 pt-6 border-t border-sidebar-border">
-            <h3 className="text-sidebar-foreground/60 text-xs uppercase tracking-wide font-medium mb-3">Quick Actions</h3>
-            <div className="space-y-2 text-sm">
-              <div className="flex items-center justify-between">
-                <span className="text-sidebar-foreground/80">/task</span>
-                <span className="text-sidebar-foreground/60">New task</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sidebar-foreground/80">/done</span>
-                <span className="text-sidebar-foreground/60">Complete</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sidebar-foreground/80">/brief</span>
-                <span className="text-sidebar-foreground/60">Status</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sidebar-foreground/80">/handoff</span>
-                <span className="text-sidebar-foreground/60">Transfer</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Main Content */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Header */}
-        <header className="border-b border-border bg-card">
-          <div className="px-6 py-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-4">
-                <h2 className="text-xl font-semibold text-card-foreground">Dashboard</h2>
-                <div className="flex space-x-1 bg-muted rounded-lg p-1">
-                  <button 
-                    onClick={() => setViewMode('va')}
-                    className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${
-                      viewMode === 'va' 
-                        ? 'bg-background text-foreground' 
-                        : 'text-muted-foreground hover:text-foreground'
-                    }`}
-                    data-testid="button-va-view"
-                  >
-                    VA View
-                  </button>
-                  <button 
-                    onClick={() => setViewMode('manager')}
-                    className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${
-                      viewMode === 'manager' 
-                        ? 'bg-background text-foreground' 
-                        : 'text-muted-foreground hover:text-foreground'
-                    }`}
-                    data-testid="button-manager-view"
-                  >
-                    Manager View
-                  </button>
-                </div>
-              </div>
-              <div className="flex items-center space-x-4">
-                {/* SLA Indicator */}
-                <div className="flex items-center space-x-2">
-                  <div className="w-2 h-2 bg-chart-3 rounded-full animate-pulse"></div>
-                  <span className="text-sm text-muted-foreground">SLA Monitor Active</span>
-                </div>
-                {/* Notification Bell */}
-                <button className="relative p-2 text-muted-foreground hover:text-foreground transition-colors" data-testid="button-notifications">
-                  <Bell className="w-5 h-5" />
-                  {(stats?.slaBreachStats.total || 0) > 0 && (
-                    <span className="absolute -top-1 -right-1 bg-destructive text-destructive-foreground text-xs rounded-full w-5 h-5 flex items-center justify-center">
-                      {stats?.slaBreachStats.total}
-                    </span>
-                  )}
+    <div className="p-6">
+      {/* Dashboard Header */}
+      <div className="border-b border-border bg-card -mx-6 -mt-6 mb-6">
+        <div className="px-6 py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-4">
+              <h2 className="text-xl font-semibold text-card-foreground">Dashboard</h2>
+              <div className="flex space-x-1 bg-muted rounded-lg p-1">
+                <button 
+                  onClick={() => setViewMode('va')}
+                  className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${
+                    viewMode === 'va' 
+                      ? 'bg-background text-foreground' 
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                  data-testid="button-va-view"
+                >
+                  VA View
+                </button>
+                <button 
+                  onClick={() => setViewMode('manager')}
+                  className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${
+                    viewMode === 'manager' 
+                      ? 'bg-background text-foreground' 
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                  data-testid="button-manager-view"
+                >
+                  Manager View
                 </button>
               </div>
             </div>
+            <div className="flex items-center space-x-4">
+              {/* SLA Indicator */}
+              <div className="flex items-center space-x-2">
+                <div className="w-2 h-2 bg-chart-3 rounded-full animate-pulse"></div>
+                <span className="text-sm text-muted-foreground">SLA Monitor Active</span>
+              </div>
+              {/* Notification Bell */}
+              <button className="relative p-2 text-muted-foreground hover:text-foreground transition-colors" data-testid="button-notifications">
+                {(stats?.slaBreachStats.total || 0) > 0 && (
+                  <span className="absolute -top-1 -right-1 bg-destructive text-destructive-foreground text-xs rounded-full w-5 h-5 flex items-center justify-center">
+                    {stats?.slaBreachStats.total}
+                  </span>
+                )}
+              </button>
+            </div>
           </div>
-        </header>
+        </div>
+      </div>
 
-        {/* Dashboard Content */}
-        <main className="flex-1 overflow-auto p-6">
+      {/* Dashboard Content */}
+      <div>
           {/* Stats Overview */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
             <Card data-testid="card-today-tasks">
@@ -499,24 +366,23 @@ export default function Dashboard() {
               <TeamStatus />
             </div>
           </div>
-        </main>
-      </div>
+        </div>
 
-      {/* Task Modal for viewing existing tasks */}
-      {selectedTask && (
+        {/* Task Modal for viewing existing tasks */}
+        {selectedTask && (
+          <TaskModal 
+            task={selectedTask} 
+            isOpen={!!selectedTask} 
+            onClose={() => setSelectedTask(null)} 
+          />
+        )}
+
+        {/* Task Modal for creating new tasks */}
         <TaskModal 
-          task={selectedTask} 
-          isOpen={!!selectedTask} 
-          onClose={() => setSelectedTask(null)} 
+          task={null}
+          isOpen={isCreatingTask}
+          onClose={() => setIsCreatingTask(false)}
         />
-      )}
-
-      {/* Task Modal for creating new tasks */}
-      <TaskModal 
-        task={null}
-        isOpen={isCreatingTask}
-        onClose={() => setIsCreatingTask(false)}
-      />
-    </div>
+      </div>
   );
 }

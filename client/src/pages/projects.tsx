@@ -65,7 +65,7 @@ export default function Projects() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
+      <div className="p-6 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
           <p className="text-muted-foreground">Loading projects...</p>
@@ -75,8 +75,7 @@ export default function Projects() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      <div className="container mx-auto p-6">
+    <div className="p-6">
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-3xl font-bold text-foreground">Projects</h1>
@@ -199,6 +198,5 @@ export default function Projects() {
           </div>
         )}
       </div>
-    </div>
   );
 }

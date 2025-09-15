@@ -187,137 +187,8 @@ export default function Settings() {
 
   const canAccessTeamManagement = permissions?.permissions?.users?.includes('read');
 
-  if (authLoading) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
-          <p className="text-muted-foreground">Loading settings...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (!isAuthenticated) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <Card className="w-full max-w-md">
-          <CardHeader className="text-center">
-            <CardTitle>Authentication Required</CardTitle>
-            <CardDescription>Please log in to access your settings</CardDescription>
-          </CardHeader>
-          <CardContent className="text-center">
-            <Button asChild>
-              <a href="/api/login">Log In</a>
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
   return (
-    <div className="flex h-screen overflow-hidden bg-background">
-      {/* Sidebar */}
-      <div className="w-64 bg-sidebar border-r border-sidebar-border flex-shrink-0">
-        <div className="p-6">
-          <div className="flex items-center space-x-3 mb-8">
-            <div className="w-10 h-10 bg-primary rounded-lg flex items-center justify-center">
-              <span className="text-primary-foreground font-bold text-lg">S</span>
-            </div>
-            <div>
-              <h1 className="text-sidebar-foreground font-semibold text-lg">Synergy VA Ops</h1>
-              <p className="text-sidebar-foreground/60 text-sm">Operations Hub</p>
-            </div>
-          </div>
-
-          {/* User Profile */}
-          <div className="mb-6 p-4 bg-sidebar-accent rounded-lg">
-            <div className="flex items-center space-x-3">
-              <Avatar className="w-8 h-8">
-                <AvatarImage src={authUser?.profileImageUrl} alt={authUser?.name} />
-                <AvatarFallback>
-                  {authUser?.name?.split(' ').map(n => n[0]).join('').toUpperCase()}
-                </AvatarFallback>
-              </Avatar>
-              <div className="flex-1 min-w-0">
-                <div className="text-sidebar-foreground font-medium text-sm truncate">{authUser?.name}</div>
-                <div className="text-sidebar-foreground/60 text-xs">{authUser?.role}</div>
-                <div className="text-sidebar-foreground/60 text-xs">
-                  Manila: {new Date().toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' })}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Navigation */}
-          <nav className="space-y-2">
-            <Link href="/" className="flex items-center space-x-3 px-3 py-2 rounded-lg text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors">
-              <Home className="w-5 h-5" />
-              <span>Dashboard</span>
-            </Link>
-            <Link href="/tasks" className="flex items-center space-x-3 px-3 py-2 rounded-lg text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors">
-              <ListTodo className="w-5 h-5" />
-              <span>Tasks</span>
-            </Link>
-            <Link href="/projects" className="flex items-center space-x-3 px-3 py-2 rounded-lg text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors">
-              <FolderKanban className="w-5 h-5" />
-              <span>Projects</span>
-            </Link>
-            <Link href="/kanban" className="flex items-center space-x-3 px-3 py-2 rounded-lg text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors">
-              <KanbanSquare className="w-5 h-5" />
-              <span>Kanban</span>
-            </Link>
-            <Link href="/playbooks" className="flex items-center space-x-3 px-3 py-2 rounded-lg text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors">
-              <BookOpen className="w-5 h-5" />
-              <span>Playbooks</span>
-            </Link>
-            <Link href="/analytics" className="flex items-center space-x-3 px-3 py-2 rounded-lg text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors">
-              <BarChart3 className="w-5 h-5" />
-              <span>Analytics</span>
-            </Link>
-            <Link href="/settings" className="flex items-center space-x-3 px-3 py-2 rounded-lg bg-sidebar-accent text-sidebar-accent-foreground">
-              <SettingsIcon className="w-5 h-5" />
-              <span className="font-medium">Settings</span>
-            </Link>
-          </nav>
-
-          {/* Logout Button */}
-          <div className="mt-8 pt-6 border-t border-sidebar-border">
-            <Button 
-              variant="ghost" 
-              onClick={handleLogout}
-              className="w-full justify-start text-sidebar-foreground hover:bg-sidebar-accent"
-              data-testid="button-logout"
-            >
-              <LogOut className="w-4 h-4 mr-2" />
-              Sign Out
-            </Button>
-          </div>
-        </div>
-      </div>
-
-      {/* Main Content */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Header */}
-        <header className="border-b border-border bg-card">
-          <div className="px-6 py-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-xl font-semibold text-card-foreground">Settings</h2>
-                <p className="text-sm text-muted-foreground">Manage your account and preferences</p>
-              </div>
-              <div className="flex items-center space-x-2">
-                <Badge variant="secondary" data-testid="text-user-role">
-                  {authUser?.role}
-                </Badge>
-              </div>
-            </div>
-          </div>
-        </header>
-
-        {/* Settings Content */}
-        <main className="flex-1 overflow-auto p-6">
+    <div className="p-6">
           <div className="max-w-4xl mx-auto">
             <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
               <TabsList className="grid w-full grid-cols-4" data-testid="tabs-settings">
@@ -688,8 +559,6 @@ export default function Settings() {
               </TabsContent>
             </Tabs>
           </div>
-        </main>
       </div>
-    </div>
   );
 }

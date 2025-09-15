@@ -117,7 +117,7 @@ export default function Analytics() {
 
   if (scorecardLoading || metricsLoading) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
+      <div className="p-6 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
           <p className="text-muted-foreground">Loading analytics...</p>
@@ -127,8 +127,7 @@ export default function Analytics() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      <div className="container mx-auto p-6">
+    <div className="p-6">
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-3xl font-bold text-foreground">Analytics</h1>
@@ -442,6 +441,5 @@ export default function Analytics() {
           </CardContent>
         </Card>
       </div>
-    </div>
   );
 }

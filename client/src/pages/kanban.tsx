@@ -399,7 +399,7 @@ export default function Kanban() {
 
   if (tasksLoading) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
+      <div className="p-6 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
           <p className="text-muted-foreground">Loading kanban board...</p>
@@ -409,8 +409,7 @@ export default function Kanban() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      <div className="container mx-auto p-6">
+    <div className="p-6">
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-3xl font-bold text-foreground">Kanban Board</h1>
@@ -504,19 +503,18 @@ export default function Kanban() {
           {/* Next Steps Panel */}
           <NextStepsPanel tasks={filteredTasks} />
         </div>
-      </div>
 
-      {/* Task Modal */}
-      {(selectedTask || isCreatingTask) && (
-        <TaskModal 
-          task={selectedTask} 
-          isOpen={!!(selectedTask || isCreatingTask)} 
-          onClose={() => {
-            setSelectedTask(null);
-            setIsCreatingTask(false);
-          }} 
-        />
-      )}
-    </div>
+        {/* Task Modal */}
+        {(selectedTask || isCreatingTask) && (
+          <TaskModal 
+            task={selectedTask} 
+            isOpen={!!(selectedTask || isCreatingTask)} 
+            onClose={() => {
+              setSelectedTask(null);
+              setIsCreatingTask(false);
+            }} 
+          />
+        )}
+      </div>
   );
 }
