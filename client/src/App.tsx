@@ -27,20 +27,30 @@ function LoginRedirect() {
   );
 }
 
+// Stable wrapper components to avoid inline lambda recreation
+const DashboardPage = () => <AppLayout><Dashboard /></AppLayout>;
+const TasksPage = () => <AppLayout><Tasks /></AppLayout>;
+const ProjectsPage = () => <AppLayout><Projects /></AppLayout>;
+const KanbanPage = () => <AppLayout><Kanban /></AppLayout>;
+const PlaybooksPage = () => <AppLayout><Playbooks /></AppLayout>;
+const AnalyticsPage = () => <AppLayout><Analytics /></AppLayout>;
+const SettingsPage = () => <AppLayout><Settings /></AppLayout>;
+const NotFoundPage = () => <AppLayout><NotFound /></AppLayout>;
+
 function Router() {
   return (
     <Switch>
-      <Route path="/" component={() => <AppLayout><Dashboard /></AppLayout>} />
-      <Route path="/dashboard" component={() => <AppLayout><Dashboard /></AppLayout>} />
+      <Route path="/" component={DashboardPage} />
+      <Route path="/dashboard" component={DashboardPage} />
       <Route path="/login" component={LoginRedirect} />
       <Route path="/oidc_login" component={LoginRedirect} />
-      <Route path="/tasks" component={() => <AppLayout><Tasks /></AppLayout>} />
-      <Route path="/projects" component={() => <AppLayout><Projects /></AppLayout>} />
-      <Route path="/kanban" component={() => <AppLayout><Kanban /></AppLayout>} />
-      <Route path="/playbooks" component={() => <AppLayout><Playbooks /></AppLayout>} />
-      <Route path="/analytics" component={() => <AppLayout><Analytics /></AppLayout>} />
-      <Route path="/settings" component={() => <AppLayout><Settings /></AppLayout>} />
-      <Route component={() => <AppLayout><NotFound /></AppLayout>} />
+      <Route path="/tasks" component={TasksPage} />
+      <Route path="/projects" component={ProjectsPage} />
+      <Route path="/kanban" component={KanbanPage} />
+      <Route path="/playbooks" component={PlaybooksPage} />
+      <Route path="/analytics" component={AnalyticsPage} />
+      <Route path="/settings" component={SettingsPage} />
+      <Route component={NotFoundPage} />
     </Switch>
   );
 }
