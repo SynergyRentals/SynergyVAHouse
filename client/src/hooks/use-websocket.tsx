@@ -81,6 +81,16 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
   const handleWebSocketMessage = (message: any) => {
     try {
       switch (message.type) {
+        case 'connected':
+          // Handle server welcome message
+          console.log('[WebSocket] Connected to server:', message.clientId);
+          break;
+
+        case 'pong':
+          // Handle server pong response 
+          console.log('[WebSocket] Server pong received');
+          break;
+
         case 'task_updated':
           // Invalidate task queries to refresh data
           queryClient.invalidateQueries({ queryKey: ['/api/tasks'] });
