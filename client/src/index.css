@@ -123,6 +123,57 @@
 
 .status-open { background-color: hsl(210, 70%, 60%); }
 .status-progress { background-color: hsl(45, 93%, 47%); }
+
+/* Text truncation utility classes */
+.text-truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.text-truncate-2 {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+.text-truncate-3 {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+}
+
+/* Responsive text truncation */
+@media (max-width: 640px) {
+  .truncate-sm {
+    max-width: 150px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+@media (max-width: 768px) {
+  .truncate-md {
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+@media (max-width: 1024px) {
+  .truncate-lg {
+    max-width: 300px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
 .status-waiting { background-color: hsl(35, 85%, 55%); }
 .status-blocked { background-color: hsl(0, 84%, 60%); }
 .status-done { background-color: hsl(142, 76%, 36%); }

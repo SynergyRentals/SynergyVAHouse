@@ -465,23 +465,57 @@ export function TaskModal({ task, isOpen, onClose }: TaskModalProps) {
             {/* New Task Creation Form */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <Label htmlFor="task-title">Title *</Label>
+                <div className="flex items-center justify-between mb-2">
+                  <Label htmlFor="task-title">Title *</Label>
+                  <span className={`text-xs ${
+                    newTaskData.title.length > 180 
+                      ? 'text-red-600' 
+                      : newTaskData.title.length > 160 
+                        ? 'text-yellow-600' 
+                        : 'text-muted-foreground'
+                  }`}>
+                    {newTaskData.title.length}/200
+                  </span>
+                </div>
                 <Input
                   id="task-title"
                   value={newTaskData.title}
-                  onChange={(e) => setNewTaskData(prev => ({ ...prev, title: e.target.value }))}
-                  placeholder="Enter task title"
+                  onChange={(e) => {
+                    if (e.target.value.length <= 200) {
+                      setNewTaskData(prev => ({ ...prev, title: e.target.value }))
+                    }
+                  }}
+                  maxLength={200}
+                  placeholder="Enter task title (max 200 chars)"
+                  className={newTaskData.title.length > 180 ? 'border-red-300 focus:border-red-500' : ''}
                   data-testid="input-task-title"
                 />
               </div>
               
               <div>
-                <Label htmlFor="task-category">Category *</Label>
+                <div className="flex items-center justify-between mb-2">
+                  <Label htmlFor="task-category">Category *</Label>
+                  <span className={`text-xs ${
+                    newTaskData.category.length > 90 
+                      ? 'text-red-600' 
+                      : newTaskData.category.length > 80 
+                        ? 'text-yellow-600' 
+                        : 'text-muted-foreground'
+                  }`}>
+                    {newTaskData.category.length}/100
+                  </span>
+                </div>
                 <Input
                   id="task-category"
                   value={newTaskData.category}
-                  onChange={(e) => setNewTaskData(prev => ({ ...prev, category: e.target.value }))}
-                  placeholder="e.g., support.urgent"
+                  onChange={(e) => {
+                    if (e.target.value.length <= 100) {
+                      setNewTaskData(prev => ({ ...prev, category: e.target.value }))
+                    }
+                  }}
+                  maxLength={100}
+                  placeholder="e.g., support.urgent (max 100 chars)"
+                  className={newTaskData.category.length > 90 ? 'border-red-300 focus:border-red-500' : ''}
                   data-testid="input-task-category"
                 />
               </div>
@@ -515,13 +549,30 @@ export function TaskModal({ task, isOpen, onClose }: TaskModalProps) {
             </div>
             
             <div>
-              <Label htmlFor="task-description">Description</Label>
+              <div className="flex items-center justify-between mb-2">
+                <Label htmlFor="task-description">Description</Label>
+                <span className={`text-xs ${
+                  newTaskData.description.length > 450 
+                    ? 'text-red-600' 
+                    : newTaskData.description.length > 400 
+                      ? 'text-yellow-600' 
+                      : 'text-muted-foreground'
+                }`}>
+                  {newTaskData.description.length}/500
+                </span>
+              </div>
               <Textarea
                 id="task-description"
                 value={newTaskData.description}
-                onChange={(e) => setNewTaskData(prev => ({ ...prev, description: e.target.value }))}
-                placeholder="Add task description..."
+                onChange={(e) => {
+                  if (e.target.value.length <= 500) {
+                    setNewTaskData(prev => ({ ...prev, description: e.target.value }))
+                  }
+                }}
+                maxLength={500}
+                placeholder="Add task description... (max 500 chars)"
                 rows={4}
+                className={newTaskData.description.length > 450 ? 'border-red-300 focus:border-red-500' : ''}
                 data-testid="textarea-task-description"
               />
             </div>

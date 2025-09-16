@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Plus, Calendar, User, Target } from "lucide-react";
 import { ProjectModal } from "@/components/project-modal";
 import { ProjectDetailModal } from "@/components/project-detail-modal";
@@ -128,7 +129,20 @@ export default function Projects() {
                   <CardHeader className="pb-3">
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
-                        <CardTitle className="text-lg mb-2">{safeText(project.title)}</CardTitle>
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <CardTitle className="text-lg mb-2 text-truncate cursor-help">
+                                {safeText(project.title)}
+                              </CardTitle>
+                            </TooltipTrigger>
+                            {project.title.length > 25 && (
+                              <TooltipContent>
+                                <p className="max-w-sm break-words">{safeText(project.title)}</p>
+                              </TooltipContent>
+                            )}
+                          </Tooltip>
+                        </TooltipProvider>
                         <Badge className={getStatusColor(project.status)}>
                           {project.status.replace('_', ' ')}
                         </Badge>
@@ -141,9 +155,20 @@ export default function Projects() {
                   </CardHeader>
                   
                   <CardContent className="space-y-4">
-                    <p className="text-sm text-muted-foreground line-clamp-2">
-                      {safeText(project.scope)}
-                    </p>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <p className="text-sm text-muted-foreground line-clamp-2 cursor-help">
+                            {safeText(project.scope)}
+                          </p>
+                        </TooltipTrigger>
+                        {project.scope.length > 100 && (
+                          <TooltipContent>
+                            <p className="max-w-md break-words">{safeText(project.scope)}</p>
+                          </TooltipContent>
+                        )}
+                      </Tooltip>
+                    </TooltipProvider>
                     
                     <div className="space-y-2">
                       <div className="flex justify-between text-sm">
@@ -175,7 +200,20 @@ export default function Projects() {
                         <div className="flex items-center space-x-2 text-sm">
                           <User className="w-4 h-4 text-muted-foreground" />
                           <span className="text-muted-foreground">Owner:</span>
-                          <span className="font-medium">{safeText(project.owner.name)}</span>
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span className="font-medium text-truncate max-w-32 cursor-help">
+                                  {safeText(project.owner.name)}
+                                </span>
+                              </TooltipTrigger>
+                              {project.owner.name.length > 20 && (
+                                <TooltipContent>
+                                  <p>{safeText(project.owner.name)}</p>
+                                </TooltipContent>
+                              )}
+                            </Tooltip>
+                          </TooltipProvider>
                         </div>
                       )}
                       

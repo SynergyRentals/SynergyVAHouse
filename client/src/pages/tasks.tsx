@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { TaskModal } from "@/components/task-modal";
 import { safeText } from "@/lib/utils";
 import { Plus, Search, Filter } from "lucide-react";
@@ -181,17 +182,56 @@ export default function Tasks() {
                       <div className="flex-1">
                         <div className="flex items-center space-x-3 mb-2">
                           <span className="text-lg">{getPriorityIcon(task.priority)}</span>
-                          <h3 className="text-lg font-medium text-foreground">{safeText(task.title)}</h3>
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <h3 className="text-lg font-medium text-foreground text-truncate max-w-xs md:max-w-md lg:max-w-lg cursor-help">
+                                  {safeText(task.title)}
+                                </h3>
+                              </TooltipTrigger>
+                              {task.title.length > 50 && (
+                                <TooltipContent>
+                                  <p className="max-w-sm break-words">{safeText(task.title)}</p>
+                                </TooltipContent>
+                              )}
+                            </Tooltip>
+                          </TooltipProvider>
                           <Badge className={getStatusColor(task.status)}>
                             {task.status.replace('_', ' ')}
                           </Badge>
                         </div>
                         
                         <div className="flex items-center space-x-4 text-sm text-muted-foreground mb-3">
-                          <span className="font-medium">{safeText(task.category).replace(/\./g, ' → ')}</span>
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span className="font-medium text-truncate max-w-xs cursor-help">
+                                  {safeText(task.category).replace(/\./g, ' → ')}
+                                </span>
+                              </TooltipTrigger>
+                              {task.category.length > 30 && (
+                                <TooltipContent>
+                                  <p className="max-w-sm break-words">{safeText(task.category).replace(/\./g, ' → ')}</p>
+                                </TooltipContent>
+                              )}
+                            </Tooltip>
+                          </TooltipProvider>
                           <span>Due: {formatDate(task.dueAt)}</span>
                           {task.assignee && (
-                            <span>Assigned to: {safeText(task.assignee.name)}</span>
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span className="text-truncate max-w-32 cursor-help">
+                                    Assigned to: {safeText(task.assignee.name)}
+                                  </span>
+                                </TooltipTrigger>
+                                {task.assignee.name.length > 20 && (
+                                  <TooltipContent>
+                                    <p>Assigned to: {safeText(task.assignee.name)}</p>
+                                  </TooltipContent>
+                                )}
+                              </Tooltip>
+                            </TooltipProvider>
                           )}
                         </div>
 

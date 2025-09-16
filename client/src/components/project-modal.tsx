@@ -161,19 +161,40 @@ export function ProjectModal({ isOpen, onClose }: ProjectModalProps) {
               <FormField
                 control={form.control}
                 name="title"
-                render={({ field }) => (
-                  <FormItem className="md:col-span-2">
-                    <FormLabel>Project Title *</FormLabel>
-                    <FormControl>
-                      <Input
-                        placeholder="Enter project title"
-                        data-testid="input-project-title"
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
+                render={({ field }) => {
+                  const titleLength = field.value?.length || 0;
+                  return (
+                    <FormItem className="md:col-span-2">
+                      <div className="flex items-center justify-between">
+                        <FormLabel>Project Title *</FormLabel>
+                        <span className={`text-xs ${
+                          titleLength > 180 
+                            ? 'text-red-600' 
+                            : titleLength > 160 
+                              ? 'text-yellow-600' 
+                              : 'text-muted-foreground'
+                        }`}>
+                          {titleLength}/200
+                        </span>
+                      </div>
+                      <FormControl>
+                        <Input
+                          placeholder="Enter project title (max 200 chars)"
+                          data-testid="input-project-title"
+                          maxLength={200}
+                          className={titleLength > 180 ? 'border-red-300 focus:border-red-500' : ''}
+                          {...field}
+                          onChange={(e) => {
+                            if (e.target.value.length <= 200) {
+                              field.onChange(e.target.value)
+                            }
+                          }}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )
+                }}
               />
 
               <FormField
@@ -272,20 +293,41 @@ export function ProjectModal({ isOpen, onClose }: ProjectModalProps) {
             <FormField
               control={form.control}
               name="scope"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Project Scope *</FormLabel>
-                  <FormControl>
-                    <Textarea
-                      placeholder="Describe the project scope, objectives, and deliverables..."
-                      rows={4}
-                      data-testid="textarea-project-scope"
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
+              render={({ field }) => {
+                const scopeLength = field.value?.length || 0;
+                return (
+                  <FormItem>
+                    <div className="flex items-center justify-between">
+                      <FormLabel>Project Scope *</FormLabel>
+                      <span className={`text-xs ${
+                        scopeLength > 450 
+                          ? 'text-red-600' 
+                          : scopeLength > 400 
+                            ? 'text-yellow-600' 
+                            : 'text-muted-foreground'
+                      }`}>
+                        {scopeLength}/500
+                      </span>
+                    </div>
+                    <FormControl>
+                      <Textarea
+                        placeholder="Describe the project scope, objectives, and deliverables... (max 500 chars)"
+                        rows={4}
+                        data-testid="textarea-project-scope"
+                        maxLength={500}
+                        className={scopeLength > 450 ? 'border-red-300 focus:border-red-500' : ''}
+                        {...field}
+                        onChange={(e) => {
+                          if (e.target.value.length <= 500) {
+                            field.onChange(e.target.value)
+                          }
+                        }}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )
+              }}
             />
 
             <div className="flex items-center justify-end space-x-3">

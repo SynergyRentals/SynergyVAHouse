@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { 
   Search, 
   Filter, 
@@ -139,32 +140,80 @@ function TaskCard({ task }: { task: Task }) {
       <Card className="mb-3 hover:shadow-md transition-shadow cursor-grab active:cursor-grabbing">
         <CardContent className="p-4">
           <div className="flex items-start justify-between mb-2">
-            <div className="flex items-center space-x-2">
+            <div className="flex items-center space-x-2 flex-1">
               {getPriorityIcon(task.priority)}
-              <h4 className="text-sm font-medium truncate flex-1">{safeText(task.title)}</h4>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <h4 className="text-sm font-medium truncate flex-1 cursor-help">
+                      {safeText(task.title)}
+                    </h4>
+                  </TooltipTrigger>
+                  {task.title.length > 30 && (
+                    <TooltipContent>
+                      <p className="max-w-xs break-words">{safeText(task.title)}</p>
+                    </TooltipContent>
+                  )}
+                </Tooltip>
+              </TooltipProvider>
             </div>
             {slaStatus && (
-              <div className={`text-xs font-medium ${slaStatus.class}`}>
+              <div className={`text-xs font-medium ${slaStatus.class} flex-shrink-0 ml-2`}>
                 {slaStatus.text}
               </div>
             )}
           </div>
           
-          <div className="text-xs text-muted-foreground mb-2">
-            {safeText(task.category).replace(/\./g, ' → ')}
-          </div>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div className="text-xs text-muted-foreground mb-2 truncate cursor-help">
+                  {safeText(task.category).replace(/\./g, ' → ')}
+                </div>
+              </TooltipTrigger>
+              {task.category.length > 25 && (
+                <TooltipContent>
+                  <p className="max-w-xs break-words">{safeText(task.category).replace(/\./g, ' → ')}</p>
+                </TooltipContent>
+              )}
+            </Tooltip>
+          </TooltipProvider>
           
           {task.project && (
-            <Badge variant="outline" className="text-xs mb-2">
-              {safeText(task.project.title)}
-            </Badge>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Badge variant="outline" className="text-xs mb-2 truncate max-w-full cursor-help">
+                    {safeText(task.project.title)}
+                  </Badge>
+                </TooltipTrigger>
+                {task.project.title.length > 20 && (
+                  <TooltipContent>
+                    <p className="max-w-xs break-words">{safeText(task.project.title)}</p>
+                  </TooltipContent>
+                )}
+              </Tooltip>
+            </TooltipProvider>
           )}
           
           <div className="flex items-center justify-between text-xs text-muted-foreground">
             {task.assignee && (
               <div className="flex items-center space-x-1">
                 <User className="w-3 h-3" />
-                <span>{safeText(task.assignee.name)}</span>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="truncate max-w-20 cursor-help">
+                        {safeText(task.assignee.name)}
+                      </span>
+                    </TooltipTrigger>
+                    {task.assignee.name.length > 15 && (
+                      <TooltipContent>
+                        <p>{safeText(task.assignee.name)}</p>
+                      </TooltipContent>
+                    )}
+                  </Tooltip>
+                </TooltipProvider>
               </div>
             )}
             {task.dueAt && (
@@ -268,10 +317,34 @@ function NextStepsPanel({ tasks }: { tasks: Task[] }) {
                 {index + 1}
               </div>
               <div className="flex-1">
-                <h5 className="text-sm font-medium mb-1">{safeText(task.title)}</h5>
-                <p className="text-xs text-muted-foreground">
-                  {safeText(task.category).replace(/\./g, ' → ')}
-                </p>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <h5 className="text-sm font-medium mb-1 truncate cursor-help">
+                        {safeText(task.title)}
+                      </h5>
+                    </TooltipTrigger>
+                    {task.title.length > 25 && (
+                      <TooltipContent>
+                        <p className="max-w-xs break-words">{safeText(task.title)}</p>
+                      </TooltipContent>
+                    )}
+                  </Tooltip>
+                </TooltipProvider>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <p className="text-xs text-muted-foreground truncate cursor-help">
+                        {safeText(task.category).replace(/\./g, ' → ')}
+                      </p>
+                    </TooltipTrigger>
+                    {task.category.length > 20 && (
+                      <TooltipContent>
+                        <p className="max-w-xs break-words">{safeText(task.category).replace(/\./g, ' → ')}</p>
+                      </TooltipContent>
+                    )}
+                  </Tooltip>
+                </TooltipProvider>
                 {task.slaAt && (
                   <p className="text-xs text-red-600 font-medium mt-1">
                     SLA: {Math.floor((new Date(task.slaAt).getTime() - Date.now()) / 60000)}m left
