@@ -307,7 +307,7 @@ export function ProjectDetailModal({ projectId, isOpen, onClose }: ProjectDetail
   if (isLoading) {
     return (
       <Dialog open={isOpen} onOpenChange={onClose}>
-        <DialogContent className="max-w-4xl max-h-[90vh]" data-testid="project-detail-modal">
+        <DialogContent className="max-w-[calc(100vw-2rem)] w-full sm:max-w-lg md:max-w-2xl lg:max-w-4xl xl:max-w-6xl max-h-[90vh] overflow-y-auto overflow-x-hidden p-4 sm:p-6" data-testid="project-detail-modal">
           <DialogHeader>
             <DialogTitle>Loading Project</DialogTitle>
             <DialogDescription>
@@ -328,7 +328,7 @@ export function ProjectDetailModal({ projectId, isOpen, onClose }: ProjectDetail
   if (error || !project) {
     return (
       <Dialog open={isOpen} onOpenChange={onClose}>
-        <DialogContent className="max-w-4xl" data-testid="project-detail-modal">
+        <DialogContent className="max-w-[calc(100vw-2rem)] w-full sm:max-w-lg md:max-w-2xl lg:max-w-4xl xl:max-w-6xl max-h-[90vh] overflow-y-auto overflow-x-hidden p-4 sm:p-6" data-testid="project-detail-modal">
           <DialogHeader>
             <DialogTitle>Failed to Load Project</DialogTitle>
             <DialogDescription>
@@ -359,7 +359,7 @@ export function ProjectDetailModal({ projectId, isOpen, onClose }: ProjectDetail
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-6xl max-h-[90vh]" data-testid="project-detail-modal">
+      <DialogContent className="max-w-[calc(100vw-2rem)] w-full sm:max-w-lg md:max-w-2xl lg:max-w-4xl xl:max-w-6xl max-h-[90vh] overflow-y-auto overflow-x-hidden p-4 sm:p-6" data-testid="project-detail-modal">
         <DialogHeader>
           <div className="flex items-start justify-between">
             <div className="flex-1">

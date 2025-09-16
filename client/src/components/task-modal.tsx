@@ -436,7 +436,7 @@ export function TaskModal({ task, isOpen, onClose }: TaskModalProps) {
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto" data-testid="task-modal">
+      <DialogContent className="max-w-[calc(100vw-2rem)] w-full sm:max-w-lg md:max-w-2xl lg:max-w-3xl xl:max-w-4xl max-h-[90vh] overflow-y-auto overflow-x-hidden p-4 sm:p-6" data-testid="task-modal">
         <DialogHeader>
           <div className="flex items-start justify-between">
             <div className="flex-1">

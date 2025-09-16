@@ -144,7 +144,7 @@ export function ProjectModal({ isOpen, onClose }: ProjectModalProps) {
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl" data-testid="project-modal">
+      <DialogContent className="max-w-[calc(100vw-2rem)] w-full sm:max-w-lg md:max-w-xl lg:max-w-2xl max-h-[90vh] overflow-y-auto overflow-x-hidden p-4 sm:p-6" data-testid="project-modal">
         <DialogHeader>
           <DialogTitle className="flex items-center space-x-2">
             <Target className="w-5 h-5" />
