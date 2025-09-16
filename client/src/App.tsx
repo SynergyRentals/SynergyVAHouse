@@ -49,6 +49,7 @@ function Router() {
       <Route path="/kanban" component={KanbanPage} />
       <Route path="/playbooks" component={PlaybooksPage} />
       <Route path="/analytics" component={AnalyticsPage} />
+      <Route path="/users" component={SettingsPage} />
       <Route path="/settings" component={SettingsPage} />
       <Route component={NotFoundPage} />
     </Switch>

@@ -107,8 +107,10 @@ function determineOIDCUserRole(claims: any): string {
     return 'test_admin';
   }
   
-  // For development/testing environments, default to admin role
-  if (process.env.NODE_ENV === 'development' || process.env.NODE_ENV !== 'production') {
+  // SECURITY: Only grant admin role in strictly defined development environments
+  if (process.env.NODE_ENV === 'development' && 
+      process.env.REPLIT_DEV_DOMAIN && 
+      !process.env.REPL_DEPLOYMENT) {
     console.log(`[OIDC Auth] Development environment - assigning admin role`);
     return 'test_admin';
   }
@@ -124,14 +126,7 @@ async function ensureUserRBACRoles(userId: string, legacyRole: string): Promise<
   try {
     console.log(`[OIDC Auth] Ensuring RBAC roles for user ${userId} with legacy role: ${legacyRole}`);
     
-    // Check if user already has RBAC roles
-    const existingRoles = await storage.getUserRoles(userId);
-    if (existingRoles.length > 0) {
-      console.log(`[OIDC Auth] User ${userId} already has ${existingRoles.length} RBAC roles assigned`);
-      return; // User already has roles assigned
-    }
-    
-    // Map legacy role to RBAC role
+    // Map legacy role to RBAC role first (before checking existing roles)
     const rbacRoleName = await mapLegacyRoleToRBAC(legacyRole);
     if (!rbacRoleName) {
       console.warn(`[OIDC Auth] No RBAC mapping found for legacy role: ${legacyRole}`);
@@ -145,14 +140,32 @@ async function ensureUserRBACRoles(userId: string, legacyRole: string): Promise<
       return;
     }
     
-    // Assign the role to the user
-    await storage.assignRoleToUser({
-      userId: userId,
-      roleId: rbacRole.id,
-      assignedBy: userId, // Self-assigned during auth
-    });
+    // Check if user already has THIS SPECIFIC role (not just any roles)
+    const existingRoles = await storage.getUserRoles(userId);
+    const hasThisRole = existingRoles.some(role => role.roleId === rbacRole.id);
     
-    console.log(`[OIDC Auth] Assigned RBAC role "${rbacRoleName}" (${rbacRole.id}) to user ${userId}`);
+    if (hasThisRole) {
+      console.log(`[OIDC Auth] User ${userId} already has required RBAC role "${rbacRoleName}"`);
+      return; // User already has this specific role
+    }
+    
+    // Use try-catch to handle duplicate role assignment gracefully
+    try {
+      await storage.assignRoleToUser({
+        userId: userId,
+        roleId: rbacRole.id,
+        assignedBy: userId, // Self-assigned during auth
+      });
+      
+      console.log(`[OIDC Auth] Assigned RBAC role "${rbacRoleName}" (${rbacRole.id}) to user ${userId}`);
+    } catch (assignError: any) {
+      // Check if it's a duplicate constraint error (role already assigned by another concurrent request)
+      if (assignError.message?.includes('duplicate') || assignError.message?.includes('unique')) {
+        console.log(`[OIDC Auth] Role "${rbacRoleName}" already assigned to user ${userId} by concurrent request`);
+      } else {
+        throw assignError; // Re-throw if it's a different error
+      }
+    }
     
     // Refresh permission cache
     await storage.refreshUserPermissionCache(userId);
