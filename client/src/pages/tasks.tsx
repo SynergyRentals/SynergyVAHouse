@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { TaskModal } from "@/components/task-modal";
+import { safeText } from "@/lib/utils";
 import { Plus, Search, Filter } from "lucide-react";
 
 interface Task {
@@ -180,17 +181,17 @@ export default function Tasks() {
                       <div className="flex-1">
                         <div className="flex items-center space-x-3 mb-2">
                           <span className="text-lg">{getPriorityIcon(task.priority)}</span>
-                          <h3 className="text-lg font-medium text-foreground">{task.title}</h3>
+                          <h3 className="text-lg font-medium text-foreground">{safeText(task.title)}</h3>
                           <Badge className={getStatusColor(task.status)}>
                             {task.status.replace('_', ' ')}
                           </Badge>
                         </div>
                         
                         <div className="flex items-center space-x-4 text-sm text-muted-foreground mb-3">
-                          <span className="font-medium">{task.category.replace(/\./g, ' → ')}</span>
+                          <span className="font-medium">{safeText(task.category).replace(/\./g, ' → ')}</span>
                           <span>Due: {formatDate(task.dueAt)}</span>
                           {task.assignee && (
-                            <span>Assigned to: {task.assignee.name}</span>
+                            <span>Assigned to: {safeText(task.assignee.name)}</span>
                           )}
                         </div>
 

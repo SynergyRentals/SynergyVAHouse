@@ -17,6 +17,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { useToast } from "@/hooks/use-toast";
+import { safeText } from "@/lib/utils";
 import { insertProjectSchema } from "@shared/schema";
 import { Calendar, User, Target } from "lucide-react";
 
@@ -204,7 +205,7 @@ export function ProjectModal({ isOpen, onClose }: ProjectModalProps) {
                         <SelectItem value="none">No owner</SelectItem>
                         {users?.map((user) => (
                           <SelectItem key={user.id} value={user.id}>
-                            {user.name} ({user.role})
+                            {safeText(user.name)} ({safeText(user.role)})
                           </SelectItem>
                         ))}
                       </SelectContent>

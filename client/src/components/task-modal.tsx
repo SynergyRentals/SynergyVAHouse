@@ -15,6 +15,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
+import { safeText, urlSafeHref } from "@/lib/utils";
 import { 
   Clock, 
   User, 
@@ -404,7 +405,7 @@ export function TaskModal({ task, isOpen, onClose }: TaskModalProps) {
           <div className="flex items-start justify-between">
             <div className="flex-1">
               <DialogTitle className="text-xl mb-2">
-                {isCreatingNew ? "Create New Task" : currentTask?.title || "Loading..."}
+                {isCreatingNew ? "Create New Task" : safeText(currentTask?.title) || "Loading..."}
               </DialogTitle>
               {!isCreatingNew && currentTask && (
                 <DialogDescription className="flex items-center space-x-4">
@@ -412,7 +413,7 @@ export function TaskModal({ task, isOpen, onClose }: TaskModalProps) {
                     {currentTask.status.replace('_', ' ')}
                   </Badge>
                   <span className="text-lg">{getPriorityIcon(currentTask.priority)}</span>
-                  <span>{currentTask.category.replace(/\./g, ' → ')}</span>
+                  <span>{safeText(currentTask.category).replace(/\./g, ' → ')}</span>
                 </DialogDescription>
               )}
             </div>
@@ -532,7 +533,7 @@ export function TaskModal({ task, isOpen, onClose }: TaskModalProps) {
               <div className="flex items-center space-x-2">
                 <User className="w-4 h-4 text-muted-foreground" />
                 <span className="text-sm text-muted-foreground">Assignee:</span>
-                <span className="font-medium">{currentTask.assignee?.name || 'Unassigned'}</span>
+                <span className="font-medium">{safeText(currentTask.assignee?.name) || 'Unassigned'}</span>
               </div>
               
               <div className="flex items-center space-x-2">
@@ -552,20 +553,23 @@ export function TaskModal({ task, isOpen, onClose }: TaskModalProps) {
               )}
             </div>
 
-            {currentTask.sourceUrl && (
-              <div className="flex items-center space-x-2">
-                <ExternalLink className="w-4 h-4 text-muted-foreground" />
-                <a 
-                  href={currentTask.sourceUrl} 
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  className="text-primary hover:underline"
-                  data-testid="link-source"
-                >
-                  View source message
-                </a>
-              </div>
-            )}
+            {(() => {
+              const safeUrl = urlSafeHref(currentTask.sourceUrl);
+              return safeUrl && (
+                <div className="flex items-center space-x-2">
+                  <ExternalLink className="w-4 h-4 text-muted-foreground" />
+                  <a 
+                    href={safeUrl} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="text-primary hover:underline"
+                    data-testid="link-source"
+                  >
+                    View source message
+                  </a>
+                </div>
+              );
+            })()}
 
             <Separator />
 
@@ -745,7 +749,7 @@ export function TaskModal({ task, isOpen, onClose }: TaskModalProps) {
                             <SelectContent>
                               {managerUsers.map((user) => (
                                 <SelectItem key={user.id} value={user.id}>
-                                  {user.name} ({user.role})
+                                  {safeText(user.name)} ({safeText(user.role)})
                                 </SelectItem>
                               ))}
                             </SelectContent>
@@ -818,7 +822,7 @@ export function TaskModal({ task, isOpen, onClose }: TaskModalProps) {
                       <span className="bg-primary text-primary-foreground rounded-full w-6 h-6 flex items-center justify-center text-sm font-medium flex-shrink-0 mt-0.5">
                         {index + 1}
                       </span>
-                      <span className="text-sm text-foreground">{step}</span>
+                      <span className="text-sm text-foreground">{safeText(step)}</span>
                     </li>
                   ))}
                 </ol>
@@ -828,8 +832,8 @@ export function TaskModal({ task, isOpen, onClose }: TaskModalProps) {
             {/* AI Suggestions for Existing Task */}
             <AISuggestions
               taskId={currentTask.id}
-              taskTitle={currentTask.title}
-              taskDescription={currentTask.comments?.map(c => c.body).join(' ') || ''}
+              taskTitle={safeText(currentTask.title)}
+              taskDescription={currentTask.comments?.map(c => safeText(c.body)).join(' ') || ''}
               sourceContext={currentTask.sourceUrl ? 'external_request' : 'internal_task'}
               onApplySuggestion={() => {
                 // Refresh task data after AI suggestions are applied
@@ -860,7 +864,7 @@ export function TaskModal({ task, isOpen, onClose }: TaskModalProps) {
                         {new Date(comment.createdAt).toLocaleString()}
                       </span>
                     </div>
-                    <p className="text-sm text-foreground">{comment.body}</p>
+                    <p className="text-sm text-foreground">{safeText(comment.body)}</p>
                   </div>
                 ))}
                 

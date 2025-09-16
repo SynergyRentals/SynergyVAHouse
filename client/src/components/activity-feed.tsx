@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Activity, CheckCircle, AlertTriangle, Clock, User } from "lucide-react";
+import { safeText } from "@/lib/utils";
 
 interface Audit {
   id: string;
@@ -31,7 +32,7 @@ export function ActivityFeed() {
   const getUserName = (actorId?: string) => {
     if (!actorId) return 'System';
     const user = users?.find(u => u.id === actorId);
-    return user?.name || 'Unknown User';
+    return safeText(user?.name) || 'Unknown User';
   };
 
   const getActivityIcon = (action: string) => {

@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Plus, Calendar, User, Target } from "lucide-react";
 import { ProjectModal } from "@/components/project-modal";
 import { ProjectDetailModal } from "@/components/project-detail-modal";
+import { safeText } from "@/lib/utils";
 
 interface Project {
   id: string;
@@ -127,7 +128,7 @@ export default function Projects() {
                   <CardHeader className="pb-3">
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
-                        <CardTitle className="text-lg mb-2">{project.title}</CardTitle>
+                        <CardTitle className="text-lg mb-2">{safeText(project.title)}</CardTitle>
                         <Badge className={getStatusColor(project.status)}>
                           {project.status.replace('_', ' ')}
                         </Badge>
@@ -141,7 +142,7 @@ export default function Projects() {
                   
                   <CardContent className="space-y-4">
                     <p className="text-sm text-muted-foreground line-clamp-2">
-                      {project.scope}
+                      {safeText(project.scope)}
                     </p>
                     
                     <div className="space-y-2">
@@ -174,7 +175,7 @@ export default function Projects() {
                         <div className="flex items-center space-x-2 text-sm">
                           <User className="w-4 h-4 text-muted-foreground" />
                           <span className="text-muted-foreground">Owner:</span>
-                          <span className="font-medium">{project.owner.name}</span>
+                          <span className="font-medium">{safeText(project.owner.name)}</span>
                         </div>
                       )}
                       

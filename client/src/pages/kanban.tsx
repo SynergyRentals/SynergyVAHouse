@@ -40,6 +40,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { TaskModal } from "@/components/task-modal";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { safeText } from "@/lib/utils";
 
 interface Task {
   id: string;
@@ -140,7 +141,7 @@ function TaskCard({ task }: { task: Task }) {
           <div className="flex items-start justify-between mb-2">
             <div className="flex items-center space-x-2">
               {getPriorityIcon(task.priority)}
-              <h4 className="text-sm font-medium truncate flex-1">{task.title}</h4>
+              <h4 className="text-sm font-medium truncate flex-1">{safeText(task.title)}</h4>
             </div>
             {slaStatus && (
               <div className={`text-xs font-medium ${slaStatus.class}`}>
@@ -150,12 +151,12 @@ function TaskCard({ task }: { task: Task }) {
           </div>
           
           <div className="text-xs text-muted-foreground mb-2">
-            {task.category.replace(/\./g, ' → ')}
+            {safeText(task.category).replace(/\./g, ' → ')}
           </div>
           
           {task.project && (
             <Badge variant="outline" className="text-xs mb-2">
-              {task.project.title}
+              {safeText(task.project.title)}
             </Badge>
           )}
           
@@ -163,7 +164,7 @@ function TaskCard({ task }: { task: Task }) {
             {task.assignee && (
               <div className="flex items-center space-x-1">
                 <User className="w-3 h-3" />
-                <span>{task.assignee.name}</span>
+                <span>{safeText(task.assignee.name)}</span>
               </div>
             )}
             {task.dueAt && (
@@ -267,9 +268,9 @@ function NextStepsPanel({ tasks }: { tasks: Task[] }) {
                 {index + 1}
               </div>
               <div className="flex-1">
-                <h5 className="text-sm font-medium mb-1">{task.title}</h5>
+                <h5 className="text-sm font-medium mb-1">{safeText(task.title)}</h5>
                 <p className="text-xs text-muted-foreground">
-                  {task.category.replace(/\./g, ' → ')}
+                  {safeText(task.category).replace(/\./g, ' → ')}
                 </p>
                 {task.slaAt && (
                   <p className="text-xs text-red-600 font-medium mt-1">
@@ -447,7 +448,7 @@ export default function Kanban() {
                   <SelectContent>
                     <SelectItem value="all">All Assignees</SelectItem>
                     {users?.map(user => (
-                      <SelectItem key={user.id} value={user.id}>{user.name}</SelectItem>
+                      <SelectItem key={user.id} value={user.id}>{safeText(user.name)}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -459,7 +460,7 @@ export default function Kanban() {
                   <SelectContent>
                     <SelectItem value="all">All Projects</SelectItem>
                     {projects?.map(project => (
-                      <SelectItem key={project.id} value={project.id}>{project.title}</SelectItem>
+                      <SelectItem key={project.id} value={project.id}>{safeText(project.title)}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
