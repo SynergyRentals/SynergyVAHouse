@@ -1,5 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
 import { 
   Dialog, 
   DialogContent, 
@@ -12,7 +15,12 @@ import { Progress } from "@/components/ui/progress";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { useToast } from "@/hooks/use-toast";
+import { insertProjectSchema } from "@shared/schema";
 import { 
   Calendar, 
   User, 
@@ -24,8 +32,34 @@ import {
   PlayCircle,
   XCircle,
   Edit,
-  Plus
+  Plus,
+  Save,
+  X
 } from "lucide-react";
+
+// Form schema for project editing
+const projectEditFormSchema = insertProjectSchema.extend({
+  startAt: z.string().optional(),
+  targetAt: z.string().optional(),
+}).refine((data) => {
+  if (data.startAt && data.targetAt) {
+    const start = new Date(data.startAt);
+    const target = new Date(data.targetAt);
+    return target >= start;
+  }
+  return true;
+}, {
+  message: "Target date must be after start date",
+  path: ["targetAt"],
+});
+
+type ProjectEditFormData = z.infer<typeof projectEditFormSchema>;
+
+interface User {
+  id: string;
+  name: string;
+  role: string;
+}
 
 interface Task {
   id: string;
@@ -69,11 +103,115 @@ interface ProjectDetailModalProps {
 export function ProjectDetailModal({ projectId, isOpen, onClose }: ProjectDetailModalProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [isEditing, setIsEditing] = useState(false);
 
   const { data: project, isLoading, error } = useQuery<ProjectDetail>({
     queryKey: [`/api/projects/${projectId}`],
     enabled: isOpen && !!projectId,
   });
+
+  // Fetch users for owner selection in edit mode
+  const { data: users } = useQuery<User[]>({
+    queryKey: ['/api/users'],
+    enabled: isOpen && isEditing,
+  });
+
+  // Form for editing project
+  const form = useForm<ProjectEditFormData>({
+    resolver: zodResolver(projectEditFormSchema),
+    defaultValues: {
+      title: "",
+      scope: "",
+      status: "active",
+      startAt: "",
+      targetAt: "",
+      ownerId: "",
+    },
+  });
+
+  // Update form when project data changes or when entering edit mode
+  useEffect(() => {
+    if (project && isEditing) {
+      const formatDate = (dateString?: string) => {
+        if (!dateString) return "";
+        return new Date(dateString).toISOString().split('T')[0];
+      };
+
+      form.reset({
+        title: project.title,
+        scope: project.scope,
+        status: project.status,
+        startAt: formatDate(project.startAt),
+        targetAt: formatDate(project.targetAt),
+        ownerId: project.owner?.id || "",
+      });
+    }
+  }, [project, isEditing, form]);
+
+  // Update project mutation
+  const updateProjectMutation = useMutation({
+    mutationFn: async (projectData: ProjectEditFormData) => {
+      if (!projectId) throw new Error('Project ID is required');
+      
+      // Transform date strings to Date objects or undefined
+      const transformedData = {
+        ...projectData,
+        startAt: projectData.startAt ? new Date(projectData.startAt).toISOString() : undefined,
+        targetAt: projectData.targetAt ? new Date(projectData.targetAt).toISOString() : undefined,
+        ownerId: projectData.ownerId && projectData.ownerId !== "none" ? projectData.ownerId : undefined,
+      };
+
+      const response = await fetch(`/api/projects/${projectId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(transformedData),
+      });
+      
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to update project');
+      }
+      
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/projects'] });
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}`] });
+      toast({ 
+        title: "Project updated successfully",
+        description: "Your project changes have been saved."
+      });
+      setIsEditing(false);
+    },
+    onError: (error: Error) => {
+      toast({ 
+        title: "Failed to update project", 
+        description: error.message,
+        variant: "destructive" 
+      });
+    },
+  });
+
+  const handleEdit = () => {
+    setIsEditing(true);
+  };
+
+  const handleCancelEdit = () => {
+    setIsEditing(false);
+    form.reset();
+  };
+
+  const handleSave = (data: ProjectEditFormData) => {
+    updateProjectMutation.mutate(data);
+  };
+
+  // Reset editing state when modal closes
+  useEffect(() => {
+    if (!isOpen) {
+      setIsEditing(false);
+      form.reset();
+    }
+  }, [isOpen, form]);
 
   const getStatusColor = (status: string) => {
     switch (status.toLowerCase()) {
@@ -227,33 +365,197 @@ export function ProjectDetailModal({ projectId, isOpen, onClose }: ProjectDetail
               </div>
             </div>
             <div className="flex items-center space-x-2">
-              <Button variant="outline" size="sm" data-testid="button-edit-project">
-                <Edit className="w-4 h-4 mr-1" />
-                Edit
-              </Button>
-              <Button variant="outline" size="sm" onClick={onClose} data-testid="button-close-project-detail">
-                Close
-              </Button>
+              {isEditing ? (
+                <>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={handleCancelEdit}
+                    disabled={updateProjectMutation.isPending}
+                    data-testid="button-cancel-edit-project"
+                  >
+                    <X className="w-4 h-4 mr-1" />
+                    Cancel
+                  </Button>
+                  <Button 
+                    size="sm" 
+                    onClick={form.handleSubmit(handleSave)}
+                    disabled={updateProjectMutation.isPending}
+                    data-testid="button-save-project"
+                  >
+                    <Save className="w-4 h-4 mr-1" />
+                    {updateProjectMutation.isPending ? "Saving..." : "Save"}
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Button variant="outline" size="sm" onClick={handleEdit} data-testid="button-edit-project">
+                    <Edit className="w-4 h-4 mr-1" />
+                    Edit
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={onClose} data-testid="button-close-project-detail">
+                    Close
+                  </Button>
+                </>
+              )}
             </div>
           </div>
         </DialogHeader>
 
         <ScrollArea className="max-h-[calc(90vh-120px)] pr-4">
-          <div className="space-y-6">
-            {/* Project Overview */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              <div className="lg:col-span-2 space-y-6">
-                {/* Project Scope */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-lg">Project Scope</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <p className="text-foreground leading-relaxed" data-testid="text-project-scope">
-                      {project.scope}
-                    </p>
-                  </CardContent>
-                </Card>
+          {isEditing ? (
+            /* Edit Form */
+            <Form {...form}>
+              <form onSubmit={form.handleSubmit(handleSave)} className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="title"
+                    render={({ field }) => (
+                      <FormItem className="md:col-span-2">
+                        <FormLabel>Project Title *</FormLabel>
+                        <FormControl>
+                          <Input
+                            placeholder="Enter project title"
+                            data-testid="input-edit-project-title"
+                            {...field}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="status"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Status</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value}>
+                          <FormControl>
+                            <SelectTrigger data-testid="select-edit-project-status">
+                              <SelectValue placeholder="Select status" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="planning">Planning</SelectItem>
+                            <SelectItem value="active">Active</SelectItem>
+                            <SelectItem value="on_hold">On Hold</SelectItem>
+                            <SelectItem value="completed">Completed</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="ownerId"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Owner</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value || undefined}>
+                          <FormControl>
+                            <SelectTrigger data-testid="select-edit-project-owner">
+                              <SelectValue placeholder="Select owner" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="none">No owner</SelectItem>
+                            {users?.map((user) => (
+                              <SelectItem key={user.id} value={user.id}>
+                                {user.name} ({user.role})
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="startAt"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="flex items-center space-x-1">
+                          <Calendar className="w-4 h-4" />
+                          <span>Start Date</span>
+                        </FormLabel>
+                        <FormControl>
+                          <Input
+                            type="date"
+                            data-testid="input-edit-project-start-date"
+                            {...field}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="targetAt"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="flex items-center space-x-1">
+                          <Target className="w-4 h-4" />
+                          <span>Target Date</span>
+                        </FormLabel>
+                        <FormControl>
+                          <Input
+                            type="date"
+                            data-testid="input-edit-project-target-date"
+                            {...field}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                <FormField
+                  control={form.control}
+                  name="scope"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Project Scope *</FormLabel>
+                      <FormControl>
+                        <Textarea
+                          placeholder="Describe the project scope, objectives, and deliverables..."
+                          rows={6}
+                          data-testid="textarea-edit-project-scope"
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </form>
+            </Form>
+          ) : (
+            /* View Mode */
+            <div className="space-y-6">
+              {/* Project Overview */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div className="lg:col-span-2 space-y-6">
+                  {/* Project Scope */}
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-lg">Project Scope</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <p className="text-foreground leading-relaxed" data-testid="text-project-scope">
+                        {project.scope}
+                      </p>
+                    </CardContent>
+                  </Card>
 
                 {/* Tasks Overview */}
                 <Card>
@@ -446,7 +748,8 @@ export function ProjectDetailModal({ projectId, isOpen, onClose }: ProjectDetail
                 </CardContent>
               </Card>
             )}
-          </div>
+            </div>
+          )}
         </ScrollArea>
       </DialogContent>
     </Dialog>
