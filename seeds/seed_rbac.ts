@@ -1,5 +1,5 @@
 import { storage } from "../server/storage";
-import type { InsertPermission, InsertRole, InsertRolePermission } from "@shared/schema";
+import type { InsertPermission, InsertRole, InsertRolePermission } from "../shared/schema";
 
 // Standard permissions for each resource
 const STANDARD_PERMISSIONS = {
@@ -35,7 +35,7 @@ const PREDEFINED_ROLES = {
       // Task management
       'tasks:read', 'tasks:update', 'tasks:assign', 'tasks:approve',
       // Project oversight
-      'projects:read', 'projects:update', 'projects:manage_team',
+      'projects:create', 'projects:read', 'projects:update', 'projects:manage_team',
       // Team management
       'users:read', 'users:invite', 'users:update',
       // Analytics access
