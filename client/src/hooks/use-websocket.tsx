@@ -79,75 +79,83 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
   };
 
   const handleWebSocketMessage = (message: any) => {
-    switch (message.type) {
-      case 'task_updated':
-        // Invalidate task queries to refresh data
-        queryClient.invalidateQueries({ queryKey: ['/api/tasks'] });
-        queryClient.invalidateQueries({ queryKey: ['/api/tasks', message.taskId] });
-        
-        if (message.data?.status === 'DONE') {
+    try {
+      switch (message.type) {
+        case 'task_updated':
+          // Invalidate task queries to refresh data
+          queryClient.invalidateQueries({ queryKey: ['/api/tasks'] });
+          queryClient.invalidateQueries({ queryKey: ['/api/tasks', message.taskId] });
+          
+          if (message.data?.status === 'DONE') {
+            toast({
+              title: "Task Completed",
+              description: `${message.data.title} has been marked as complete.`,
+            });
+          }
+          break;
+
+        case 'sla_breach':
+          // Invalidate SLA-related queries
+          queryClient.invalidateQueries({ queryKey: ['/api/tasks', { slaBreached: 'true' }] });
+          
           toast({
-            title: "Task Completed",
-            description: `${message.data.title} has been marked as complete.`,
+            title: "SLA Breach Alert",
+            description: `Task "${message.data?.title}" has breached its SLA.`,
+            variant: "destructive",
           });
-        }
-        break;
+          break;
 
-      case 'sla_breach':
-        // Invalidate SLA-related queries
-        queryClient.invalidateQueries({ queryKey: ['/api/tasks', { slaBreached: 'true' }] });
-        
-        toast({
-          title: "SLA Breach Alert",
-          description: `Task "${message.data?.title}" has breached its SLA.`,
-          variant: "destructive",
-        });
-        break;
+        case 'task_created':
+          // Invalidate all task queries
+          queryClient.invalidateQueries({ queryKey: ['/api/tasks'] });
+          
+          if (message.data?.sourceKind === 'conduit' || message.data?.sourceKind === 'suiteop') {
+            toast({
+              title: "New Task from System",
+              description: `A new ${message.data.category} task has been created.`,
+            });
+          }
+          break;
 
-      case 'task_created':
-        // Invalidate all task queries
-        queryClient.invalidateQueries({ queryKey: ['/api/tasks'] });
-        
-        if (message.data?.sourceKind === 'conduit' || message.data?.sourceKind === 'suiteop') {
+        case 'followup_reminder':
           toast({
-            title: "New Task from System",
-            description: `A new ${message.data.category} task has been created.`,
+            title: "Follow-up Reminder",
+            description: `Don't forget to update on: ${message.data?.title}`,
           });
-        }
-        break;
+          break;
 
-      case 'followup_reminder':
-        toast({
-          title: "Follow-up Reminder",
-          description: `Don't forget to update on: ${message.data?.title}`,
-        });
-        break;
+        case 'daily_brief':
+          // Refresh dashboard stats
+          queryClient.invalidateQueries({ queryKey: ['/api/tasks/stats'] });
+          break;
 
-      case 'daily_brief':
-        // Refresh dashboard stats
-        queryClient.invalidateQueries({ queryKey: ['/api/tasks/stats'] });
-        break;
+        case 'metrics_updated':
+          // Refresh analytics data
+          queryClient.invalidateQueries({ queryKey: ['/api/metrics'] });
+          break;
 
-      case 'metrics_updated':
-        // Refresh analytics data
-        queryClient.invalidateQueries({ queryKey: ['/api/metrics'] });
-        break;
+        case 'user_status_changed':
+          // Refresh team status
+          queryClient.invalidateQueries({ queryKey: ['/api/users'] });
+          break;
 
-      case 'user_status_changed':
-        // Refresh team status
-        queryClient.invalidateQueries({ queryKey: ['/api/users'] });
-        break;
-
-      default:
-        console.log('Unknown WebSocket message type:', message.type);
+        default:
+          console.log('Unknown WebSocket message type:', message.type);
+      }
+    } catch (error) {
+      console.error('Error handling WebSocket message:', error, 'Message:', message);
     }
   };
 
   const sendMessage = (message: any) => {
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify(message));
-    } else {
-      console.warn('WebSocket is not connected');
+    try {
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify(message));
+      } else {
+        console.warn('WebSocket is not connected');
+      }
+    } catch (error) {
+      console.error('Error sending WebSocket message:', error);
     }
   };
 
