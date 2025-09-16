@@ -75,7 +75,14 @@ export async function registerProjectsAPI(app: Express) {
   // Create project - RBAC Protected
   app.post('/api/projects', requireAuth as any, requirePermission('projects', 'create'), async (req: AuthenticatedRequest, res) => {
     try {
-      const projectData = insertProjectSchema.parse(req.body);
+      // Transform date strings to Date objects before validation
+      const transformedBody = {
+        ...req.body,
+        startAt: req.body.startAt ? new Date(req.body.startAt) : undefined,
+        targetAt: req.body.targetAt ? new Date(req.body.targetAt) : undefined,
+      };
+      
+      const projectData = insertProjectSchema.parse(transformedBody);
       const project = await storage.createProject(projectData);
       
       await storage.createAudit({

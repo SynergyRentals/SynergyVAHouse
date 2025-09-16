@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { Plus, Calendar, User, Target } from "lucide-react";
+import { ProjectModal } from "@/components/project-modal";
 
 interface Project {
   id: string;
@@ -29,6 +30,7 @@ interface Project {
 
 export default function Projects() {
   const [selectedProject, setSelectedProject] = useState<string | null>(null);
+  const [isCreatingProject, setIsCreatingProject] = useState(false);
 
   const { data: projects, isLoading } = useQuery<Project[]>({
     queryKey: ['/api/projects'],
@@ -81,7 +83,10 @@ export default function Projects() {
             <h1 className="text-3xl font-bold text-foreground">Projects</h1>
             <p className="text-muted-foreground">Track progress and manage project tasks</p>
           </div>
-          <Button data-testid="button-create-project">
+          <Button 
+            data-testid="button-create-project"
+            onClick={() => setIsCreatingProject(true)}
+          >
             <Plus className="w-4 h-4 mr-2" />
             New Project
           </Button>
@@ -95,7 +100,10 @@ export default function Projects() {
               <p className="text-muted-foreground mb-4">
                 Create your first project to start organizing your work.
               </p>
-              <Button>
+              <Button 
+                data-testid="button-create-project-empty"
+                onClick={() => setIsCreatingProject(true)}
+              >
                 <Plus className="w-4 h-4 mr-2" />
                 Create Project
               </Button>
@@ -197,6 +205,12 @@ export default function Projects() {
             })}
           </div>
         )}
+
+        {/* Project Creation Modal */}
+        <ProjectModal 
+          isOpen={isCreatingProject} 
+          onClose={() => setIsCreatingProject(false)} 
+        />
       </div>
   );
 }
