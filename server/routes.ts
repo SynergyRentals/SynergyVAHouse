@@ -20,36 +20,22 @@ export async function registerRoutes(app: Express): Promise<void> {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
   });
 
-  // Auth routes for frontend
-  app.get('/api/auth/user', async (req, res) => {
+  // Auth routes for frontend - Use consistent authentication with dev fallback
+  app.get('/api/auth/user', requireAuth as any, async (req: AuthenticatedRequest, res) => {
     try {
-      // Check if user has Replit Auth session
-      if (req.isAuthenticated && req.isAuthenticated() && req.user) {
-        const sessionUser = req.user as any;
-        if (sessionUser.claims?.sub) {
-          // Find user by replitSub instead of using sub as primary key
-          const user = await storage.getUserByReplitSub(sessionUser.claims.sub);
-          if (user) {
-            res.json({
-              id: user.id,
-              name: user.name,
-              email: user.email,
-              firstName: user.firstName,
-              lastName: user.lastName,
-              profileImageUrl: user.profileImageUrl,
-              role: user.role,
-              department: user.department,
-              authType: 'replit'
-            });
-            return;
-          }
-        }
-      }
+      // User is guaranteed to be authenticated by requireAuth middleware
+      const user = req.user!;
       
-      // No authenticated user found
-      res.status(401).json({ 
-        error: 'Not authenticated',
-        message: 'Please log in to access this resource'
+      res.json({
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        profileImageUrl: user.profileImageUrl,
+        role: user.role,
+        department: user.department,
+        authType: user.authType || 'replit'
       });
     } catch (error) {
       console.error("Error fetching authenticated user:", error);

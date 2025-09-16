@@ -6,6 +6,7 @@ import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { Plus, Calendar, User, Target } from "lucide-react";
 import { ProjectModal } from "@/components/project-modal";
+import { ProjectDetailModal } from "@/components/project-detail-modal";
 
 interface Project {
   id: string;
@@ -210,6 +211,13 @@ export default function Projects() {
         <ProjectModal 
           isOpen={isCreatingProject} 
           onClose={() => setIsCreatingProject(false)} 
+        />
+        
+        {/* Project Detail Modal */}
+        <ProjectDetailModal 
+          projectId={selectedProject}
+          isOpen={selectedProject !== null}
+          onClose={() => setSelectedProject(null)}
         />
       </div>
   );

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
+import { createContext, useContext, useEffect, useRef, useState, ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useToast } from '@/hooks/use-toast';
 
@@ -18,7 +18,7 @@ export function useWebSocket() {
 }
 
 interface WebSocketProviderProps {
-  children: React.ReactNode;
+  children: ReactNode;
 }
 
 export function WebSocketProvider({ children }: WebSocketProviderProps) {
