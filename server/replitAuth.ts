@@ -216,8 +216,8 @@ async function linkOrCreateUser(
         role: user.role, // Keep existing role (critical for Super Admin users)
         timezone: user.timezone, // Keep existing timezone
         isActive: user.isActive, // Keep existing status
-        permissions: user.permissions, // Keep existing permissions
-        preferences: user.preferences, // Keep existing preferences
+        permissions: user.permissions as any, // Keep existing permissions  
+        preferences: user.preferences as any, // Keep existing preferences
         department: user.department, // Keep existing department
         managerId: user.managerId, // Keep existing manager
       });
@@ -292,7 +292,7 @@ export async function setupAuth(app: Express) {
     tokens: client.TokenEndpointResponse & client.TokenEndpointResponseHelpers,
     verified: passport.AuthenticateCallback
   ) => {
-    const user = {};
+    const user = {} as any;
     updateUserSession(user, tokens);
     await linkOrCreateUser(tokens.claims());
     verified(null, user);
