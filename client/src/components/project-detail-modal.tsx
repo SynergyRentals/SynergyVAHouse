@@ -8,6 +8,7 @@ import {
   DialogContent, 
   DialogHeader, 
   DialogTitle,
+  DialogDescription
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -307,6 +308,12 @@ export function ProjectDetailModal({ projectId, isOpen, onClose }: ProjectDetail
     return (
       <Dialog open={isOpen} onOpenChange={onClose}>
         <DialogContent className="max-w-4xl max-h-[90vh]" data-testid="project-detail-modal">
+          <DialogHeader>
+            <DialogTitle>Loading Project</DialogTitle>
+            <DialogDescription>
+              Please wait while we load the project details.
+            </DialogDescription>
+          </DialogHeader>
           <div className="flex items-center justify-center p-8">
             <div className="text-center">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
@@ -322,6 +329,12 @@ export function ProjectDetailModal({ projectId, isOpen, onClose }: ProjectDetail
     return (
       <Dialog open={isOpen} onOpenChange={onClose}>
         <DialogContent className="max-w-4xl" data-testid="project-detail-modal">
+          <DialogHeader>
+            <DialogTitle>Failed to Load Project</DialogTitle>
+            <DialogDescription>
+              Unable to fetch project details. Please try again.
+            </DialogDescription>
+          </DialogHeader>
           <div className="flex items-center justify-center p-8">
             <div className="text-center">
               <AlertTriangle className="w-12 h-12 mx-auto mb-4 text-red-500" />
@@ -354,7 +367,7 @@ export function ProjectDetailModal({ projectId, isOpen, onClose }: ProjectDetail
                 <Target className="w-6 h-6 text-primary" />
                 <span data-testid="text-project-title">{project.title}</span>
               </DialogTitle>
-              <div className="flex items-center space-x-3 mt-2">
+              <DialogDescription className="flex items-center space-x-3 mt-2">
                 <Badge className={getStatusColor(project.status)} data-testid="badge-project-status">
                   {project.status.replace('_', ' ')}
                 </Badge>
@@ -362,7 +375,12 @@ export function ProjectDetailModal({ projectId, isOpen, onClose }: ProjectDetail
                   {progress}%
                 </div>
                 <span className="text-muted-foreground">complete</span>
-              </div>
+                {daysRemaining !== null && (
+                  <span className={`text-sm ${isOverdue ? 'text-red-600' : 'text-muted-foreground'}`}>
+                    {isOverdue ? `${Math.abs(daysRemaining)} days overdue` : `${daysRemaining} days remaining`}
+                  </span>
+                )}
+              </DialogDescription>
             </div>
             <div className="flex items-center space-x-2">
               {isEditing ? (
