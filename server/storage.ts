@@ -94,6 +94,9 @@ export interface IStorage {
 }
 
 export class DatabaseStorage implements IStorage {
+  // Permission cache computation locks to prevent race conditions
+  private permissionComputeLocks = new Map<string, Promise<UserPermissions>>();
+
   // Users
   async getUser(id: string): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.id, id));
@@ -507,10 +510,28 @@ export class DatabaseStorage implements IStorage {
       // First try to get from cache
       let userPermissions = await this.getUserPermissionsFromCache(userId);
       
-      // If not in cache, compute and cache it
+      // If not in cache, compute and cache it (with race condition protection)
       if (!userPermissions) {
-        userPermissions = await this.computeUserPermissions(userId);
-        await this.refreshUserPermissionCache(userId);
+        // Check if another request is already computing permissions for this user
+        let computePromise = this.permissionComputeLocks.get(userId);
+        
+        if (computePromise) {
+          // Another request is already computing, wait for it
+          userPermissions = await computePromise;
+        } else {
+          // We are the first to compute, create and store the promise
+          computePromise = this.computeUserPermissions(userId);
+          this.permissionComputeLocks.set(userId, computePromise);
+          
+          try {
+            userPermissions = await computePromise;
+            // Cache the computed permissions
+            await this.refreshUserPermissionCache(userId);
+          } finally {
+            // Always clean up the lock
+            this.permissionComputeLocks.delete(userId);
+          }
+        }
       }
 
       // Check if user has the specific permission
