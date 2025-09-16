@@ -255,11 +255,26 @@ export const userRolesRelations = relations(userRoles, ({ one }) => ({
   }),
 }));
 
-// Insert schemas
+// Insert schemas with enhanced validation
 export const insertUserSchema = createInsertSchema(users).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
+}).extend({
+  name: z.string()
+    .min(1, "Name is required and cannot be empty")
+    .max(100, "Name cannot exceed 100 characters")
+    .trim()
+    .refine(val => val.length > 0, "Name cannot be just whitespace"),
+  role: z.string()
+    .min(1, "Role is required and cannot be empty")
+    .max(50, "Role cannot exceed 50 characters")
+    .trim()
+    .refine(val => val.length > 0, "Role cannot be just whitespace"),
+  email: z.string()
+    .email("Invalid email format")
+    .optional()
+    .or(z.literal("")),
 });
 
 export const upsertUserSchema = createInsertSchema(users).omit({
@@ -269,16 +284,65 @@ export const upsertUserSchema = createInsertSchema(users).omit({
   id: true,
 });
 
-export const insertTaskSchema = createInsertSchema(tasks).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
+// Enhanced task schema with strict validation - completely redefine to ensure validation works
+export const insertTaskSchema = z.object({
+  title: z.string()
+    .min(1, "Task title is required and cannot be empty")
+    .max(200, "Task title cannot exceed 200 characters")
+    .trim()
+    .refine(val => val.length > 0, "Task title cannot be just whitespace"),
+  category: z.string()
+    .min(1, "Category is required and cannot be empty")
+    .max(100, "Category cannot exceed 100 characters")
+    .trim()
+    .refine(val => val.length > 0, "Category cannot be just whitespace"),
+  type: z.enum(['daily', 'weekly', 'reactive', 'project', 'follow_up'], {
+    errorMap: () => ({ message: "Type must be one of: daily, weekly, reactive, project, follow_up" }),
+  }),
+  status: z.enum(['OPEN', 'IN_PROGRESS', 'WAITING', 'BLOCKED', 'DONE'], {
+    errorMap: () => ({ message: "Status must be one of: OPEN, IN_PROGRESS, WAITING, BLOCKED, DONE" }),
+  }).default('OPEN'),
+  priority: z.number()
+    .int("Priority must be a whole number")
+    .min(1, "Priority must be between 1 (highest) and 5 (lowest)")
+    .max(5, "Priority must be between 1 (highest) and 5 (lowest)")
+    .default(3),
+  assigneeId: z.string().optional().or(z.literal("")),
+  dueAt: z.date().optional().or(z.literal(null)),
+  slaAt: z.date().optional().or(z.literal(null)),
+  sourceKind: z.string().optional().or(z.literal("")),
+  sourceId: z.string().optional().or(z.literal("")),
+  sourceUrl: z.string().url("Invalid URL format").optional().or(z.literal("")),
+  playbookKey: z.string().optional().or(z.literal("")),
+  dodSchema: z.any().optional(),
+  evidence: z.any().optional(),
+  followUpMetadata: z.any().optional(),
+  approvals: z.any().optional(),
+  createdBy: z.string().optional().or(z.literal("")),
+  projectId: z.string().optional().or(z.literal("")),
 });
 
-export const insertProjectSchema = createInsertSchema(projects).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
+// Enhanced project schema with strict validation - completely redefine to ensure validation works
+export const insertProjectSchema = z.object({
+  title: z.string()
+    .min(1, "Project title is required and cannot be empty")
+    .max(200, "Project title cannot exceed 200 characters")
+    .trim()
+    .refine(val => val.length > 0, "Project title cannot be just whitespace"),
+  scope: z.string()
+    .min(1, "Project scope is required and cannot be empty")
+    .max(500, "Project scope cannot exceed 500 characters")
+    .trim()
+    .refine(val => val.length > 0, "Project scope cannot be just whitespace"),
+  status: z.enum(['planning', 'active', 'on_hold', 'completed', 'cancelled'], {
+    errorMap: () => ({ message: "Status must be one of: planning, active, on_hold, completed, cancelled" }),
+  }).default('planning'),
+  view: z.enum(['kanban', 'list', 'timeline'], {
+    errorMap: () => ({ message: "View must be one of: kanban, list, timeline" }),
+  }).default('kanban'),
+  ownerId: z.string().optional().or(z.literal("")),
+  startAt: z.date().optional().or(z.literal(null)),
+  targetAt: z.date().optional().or(z.literal(null)),
 });
 
 export const insertCommentSchema = createInsertSchema(comments).omit({

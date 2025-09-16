@@ -156,15 +156,35 @@ export function TaskModal({ task, isOpen, onClose }: TaskModalProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updates),
       });
-      if (!response.ok) throw new Error('Failed to update task');
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        
+        // If it's a validation error with field-specific errors, include that information
+        if (errorData.fieldErrors && typeof errorData.fieldErrors === 'object') {
+          const fieldErrorMessages = Object.entries(errorData.fieldErrors)
+            .map(([field, message]) => `${field}: ${message}`)
+            .join('\n');
+          
+          const fullMessage = `${errorData.message || 'Validation failed'}\n\nField errors:\n${fieldErrorMessages}`;
+          throw new Error(fullMessage);
+        }
+        
+        throw new Error(errorData.error || errorData.message || 'Failed to update task');
+      }
+      
       return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/tasks'] });
       toast({ title: "Task updated successfully" });
     },
-    onError: () => {
-      toast({ title: "Failed to update task", variant: "destructive" });
+    onError: (error: Error) => {
+      toast({ 
+        title: "Failed to update task", 
+        description: error.message,
+        variant: "destructive" 
+      });
     },
   });
 
@@ -180,7 +200,23 @@ export function TaskModal({ task, isOpen, onClose }: TaskModalProps) {
           dueAt: taskData.dueAt || null,
         }),
       });
-      if (!response.ok) throw new Error('Failed to create task');
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        
+        // If it's a validation error with field-specific errors, include that information
+        if (errorData.fieldErrors && typeof errorData.fieldErrors === 'object') {
+          const fieldErrorMessages = Object.entries(errorData.fieldErrors)
+            .map(([field, message]) => `${field}: ${message}`)
+            .join('\n');
+          
+          const fullMessage = `${errorData.message || 'Validation failed'}\n\nField errors:\n${fieldErrorMessages}`;
+          throw new Error(fullMessage);
+        }
+        
+        throw new Error(errorData.error || errorData.message || 'Failed to create task');
+      }
+      
       return response.json();
     },
     onSuccess: async (createdTask) => {

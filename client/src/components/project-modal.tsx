@@ -103,8 +103,19 @@ export function ProjectModal({ isOpen, onClose }: ProjectModalProps) {
       });
       
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Failed to create project');
+        const errorData = await response.json();
+        
+        // If it's a validation error with field-specific errors, include that information
+        if (errorData.fieldErrors && typeof errorData.fieldErrors === 'object') {
+          const fieldErrorMessages = Object.entries(errorData.fieldErrors)
+            .map(([field, message]) => `${field}: ${message}`)
+            .join('\n');
+          
+          const fullMessage = `${errorData.message || 'Validation failed'}\n\nField errors:\n${fieldErrorMessages}`;
+          throw new Error(fullMessage);
+        }
+        
+        throw new Error(errorData.error || errorData.message || 'Failed to create project');
       }
       
       return response.json();

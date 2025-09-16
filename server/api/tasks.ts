@@ -273,7 +273,34 @@ export async function registerTasksAPI(app: Express) {
   // Create task - RBAC Protected
   app.post('/api/tasks', requireAuth as any, requirePermission('tasks', 'create'), async (req: AuthenticatedRequest, res) => {
     try {
-      let taskData = insertTaskSchema.parse(req.body);
+      // Transform date strings to Date objects before validation
+      const transformedBody = {
+        ...req.body,
+        dueAt: req.body.dueAt ? new Date(req.body.dueAt) : undefined,
+        slaAt: req.body.slaAt ? new Date(req.body.slaAt) : undefined,
+      };
+      
+      // Use safeParse for detailed validation error handling
+      const validationResult = insertTaskSchema.safeParse(transformedBody);
+      
+      if (!validationResult.success) {
+        const fieldErrors: Record<string, string> = {};
+        validationResult.error.errors.forEach(error => {
+          const field = error.path.join('.');
+          fieldErrors[field] = error.message;
+        });
+        
+        console.error('Task validation failed:', fieldErrors);
+        res.status(400).json({ 
+          error: 'Validation failed',
+          message: 'The task data you provided is invalid. Please check the errors below.',
+          fieldErrors,
+          details: validationResult.error.errors
+        });
+        return;
+      }
+
+      let taskData = validationResult.data;
       
       // Fix playbookKey mapping if not provided or incorrect
       const categoryMapping = getCategoryPlaybookMapping();
@@ -338,7 +365,7 @@ export async function registerTasksAPI(app: Express) {
       res.json(task);
     } catch (error) {
       console.error('Error creating task:', error);
-      res.status(400).json({ error: 'Invalid task data' });
+      res.status(500).json({ error: 'Internal server error while creating task' });
     }
   });
 
@@ -346,13 +373,7 @@ export async function registerTasksAPI(app: Express) {
   app.patch('/api/tasks/:id', requireAuth as any, requirePermission('tasks', 'update'), async (req: AuthenticatedRequest, res) => {
     try {
       const { id } = req.params as { id: string };
-      const updates = req.body as any;
-      const { adminOverride, overrideReason, overrideUserId } = updates;
-      
-      // Remove admin override fields from updates
-      delete updates.adminOverride;
-      delete updates.overrideReason;
-      delete updates.overrideUserId;
+      const { adminOverride, overrideReason, overrideUserId, ...updates } = req.body;
       
       const existingTask = await storage.getTask(id);
       if (!existingTask) {
@@ -360,14 +381,44 @@ export async function registerTasksAPI(app: Express) {
         return;
       }
 
+      // Transform date strings to Date objects before validation
+      const transformedUpdates = {
+        ...updates,
+        dueAt: updates.dueAt ? new Date(updates.dueAt) : undefined,
+        slaAt: updates.slaAt ? new Date(updates.slaAt) : undefined,
+      };
+      
+      // Create partial schema for updates (all fields optional but still validated when present)
+      const updateTaskSchema = insertTaskSchema.partial();
+      const validationResult = updateTaskSchema.safeParse(transformedUpdates);
+      
+      if (!validationResult.success) {
+        const fieldErrors: Record<string, string> = {};
+        validationResult.error.errors.forEach(error => {
+          const field = error.path.join('.');
+          fieldErrors[field] = error.message;
+        });
+        
+        console.error('Task update validation failed:', fieldErrors);
+        res.status(400).json({ 
+          error: 'Validation failed',
+          message: 'The task update data you provided is invalid. Please check the errors below.',
+          fieldErrors,
+          details: validationResult.error.errors
+        });
+        return;
+      }
+
+      const validatedUpdates = validationResult.data;
+
       // DoD validation when marking task as DONE
-      if (updates.status === 'DONE' && existingTask.status !== 'DONE') {
+      if (validatedUpdates.status === 'DONE' && existingTask.status !== 'DONE') {
         console.log('[DoD Debug] Starting validation for task:', existingTask.id);
         console.log('[DoD Debug] Task playbookKey:', existingTask.playbookKey);
         console.log('[DoD Debug] Task dodSchema:', existingTask.dodSchema);
-        console.log('[DoD Debug] Evidence provided:', updates.evidence || existingTask.evidence);
+        console.log('[DoD Debug] Evidence provided:', validatedUpdates.evidence || existingTask.evidence);
         
-        const dodValidation = await validateTaskDoD(existingTask, updates.evidence || existingTask.evidence);
+        const dodValidation = await validateTaskDoD(existingTask, validatedUpdates.evidence || existingTask.evidence);
         
         console.log('[DoD Debug] Validation result:', dodValidation);
         console.log('[DoD Debug] Admin override:', adminOverride);
@@ -407,20 +458,20 @@ export async function registerTasksAPI(app: Express) {
         }
       }
 
-      const task = await storage.updateTask(id, updates);
+      const task = await storage.updateTask(id, validatedUpdates);
       
       // Create audit log
       await storage.createAudit({
         entity: 'task',
         entityId: id,
         action: 'updated',
-        data: { updates, previousState: existingTask }
+        data: { updates: validatedUpdates, previousState: existingTask }
       });
       
       res.json(task);
     } catch (error) {
       console.error('Error updating task:', error);
-      res.status(400).json({ error: 'Failed to update task' });
+      res.status(500).json({ error: 'Internal server error while updating task' });
     }
   });
 

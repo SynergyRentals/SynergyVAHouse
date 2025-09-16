@@ -82,8 +82,27 @@ export async function registerProjectsAPI(app: Express) {
         targetAt: req.body.targetAt ? new Date(req.body.targetAt) : undefined,
       };
       
-      const projectData = insertProjectSchema.parse(transformedBody);
-      const project = await storage.createProject(projectData);
+      // Use safeParse for detailed validation error handling
+      const validationResult = insertProjectSchema.safeParse(transformedBody);
+      
+      if (!validationResult.success) {
+        const fieldErrors: Record<string, string> = {};
+        validationResult.error.errors.forEach(error => {
+          const field = error.path.join('.');
+          fieldErrors[field] = error.message;
+        });
+        
+        console.error('Project validation failed:', fieldErrors);
+        res.status(400).json({ 
+          error: 'Validation failed',
+          message: 'The project data you provided is invalid. Please check the errors below.',
+          fieldErrors,
+          details: validationResult.error.errors
+        });
+        return;
+      }
+      
+      const project = await storage.createProject(validationResult.data);
       
       await storage.createAudit({
         entity: 'project',
@@ -95,7 +114,7 @@ export async function registerProjectsAPI(app: Express) {
       res.json(project);
     } catch (error) {
       console.error('Error creating project:', error);
-      res.status(400).json({ error: 'Invalid project data' });
+      res.status(500).json({ error: 'Internal server error while creating project' });
     }
   });
 
@@ -103,7 +122,6 @@ export async function registerProjectsAPI(app: Express) {
   app.patch('/api/projects/:id', requireAuth as any, requirePermission('projects', 'update'), async (req: AuthenticatedRequest, res) => {
     try {
       const { id } = req.params as { id: string };
-      const updates = req.body as any;
       
       const existingProject = await storage.getProject(id);
       if (!existingProject) {
@@ -111,19 +129,47 @@ export async function registerProjectsAPI(app: Express) {
         return;
       }
 
-      const project = await storage.updateProject(id, updates);
+      // Transform date strings to Date objects before validation
+      const transformedBody = {
+        ...req.body,
+        startAt: req.body.startAt ? new Date(req.body.startAt) : undefined,
+        targetAt: req.body.targetAt ? new Date(req.body.targetAt) : undefined,
+      };
+
+      // Create partial schema for updates (all fields optional but still validated when present)
+      const updateProjectSchema = insertProjectSchema.partial();
+      const validationResult = updateProjectSchema.safeParse(transformedBody);
+      
+      if (!validationResult.success) {
+        const fieldErrors: Record<string, string> = {};
+        validationResult.error.errors.forEach(error => {
+          const field = error.path.join('.');
+          fieldErrors[field] = error.message;
+        });
+        
+        console.error('Project update validation failed:', fieldErrors);
+        res.status(400).json({ 
+          error: 'Validation failed',
+          message: 'The project update data you provided is invalid. Please check the errors below.',
+          fieldErrors,
+          details: validationResult.error.errors
+        });
+        return;
+      }
+
+      const project = await storage.updateProject(id, validationResult.data);
       
       await storage.createAudit({
         entity: 'project',
         entityId: id,
         action: 'updated',
-        data: { updates, previousState: existingProject }
+        data: { updates: validationResult.data, previousState: existingProject }
       });
       
       res.json(project);
     } catch (error) {
       console.error('Error updating project:', error);
-      res.status(400).json({ error: 'Failed to update project' });
+      res.status(500).json({ error: 'Internal server error while updating project' });
     }
   });
 
