@@ -35,7 +35,11 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     }
 
     // Method 3: Development fallback ONLY (strictly prohibited in production)
-    if (!user && process.env.NODE_ENV === 'development') {
+    // Additional safety checks to prevent accidental production bypass
+    if (!user && 
+        process.env.NODE_ENV === 'development' && 
+        !process.env.REPL_DEPLOYMENT &&  // Extra check: not in deployment
+        process.env.REPLIT_DEV_DOMAIN) { // Extra check: only in dev environment
       // DEVELOPMENT ONLY: Allow header-based auth for local testing
       const userId = req.headers['x-user-id'] as string || 
                      req.body?.actorId || 
@@ -62,10 +66,25 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
           }
         }
         authType = 'dev-fallback';
+        
+        // Security logging for development auth bypass
+        console.warn('[Security] Development auth bypass used', {
+          userId: user?.id,
+          userName: user?.name,
+          requestIp: req.ip,
+          userAgent: req.headers['user-agent']
+        });
       } else if (userId.includes('-')) {
         // UUID lookup
         user = await storage.getUser(userId);
         authType = 'dev-fallback';
+        
+        // Security logging for development auth bypass
+        console.warn('[Security] Development auth bypass used (UUID lookup)', {
+          userId: user?.id,
+          lookupId: userId,
+          requestIp: req.ip
+        });
       } else {
         // Slack ID or name lookup
         const allUsers = await storage.getAllUsers();
@@ -74,6 +93,13 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
           u.name.toLowerCase().includes(userId.toLowerCase())
         );
         authType = 'dev-fallback';
+        
+        // Security logging for development auth bypass
+        console.warn('[Security] Development auth bypass used (name/slack lookup)', {
+          userId: user?.id,
+          lookupValue: userId,
+          requestIp: req.ip
+        });
       }
     }
 
