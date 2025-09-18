@@ -42,6 +42,8 @@ interface Task {
   playbookKey?: string;
   evidence?: any;
   dodSchema?: any;
+  assigneeId?: string;
+  projectId?: string;
   assignee?: {
     id: string;
     name: string;
@@ -173,6 +175,38 @@ export function TaskModal({ task, isOpen, onClose }: TaskModalProps) {
       if (!task?.id) throw new Error('No task to update');
       // Transform assigneeId and projectId empty string to null for backend compatibility
       const transformedUpdates = transformIds(updates);
+      
+      // Apply optimistic updates immediately
+      if (updates.assigneeId !== undefined) {
+        const selectedUser = users?.find(u => u.id === updates.assigneeId);
+        const optimisticTask = {
+          ...currentTask,
+          assigneeId: updates.assigneeId || null,
+          assignee: updates.assigneeId ? {
+            id: updates.assigneeId,
+            name: selectedUser?.name || 'Unknown User',
+            slackId: '' // We don't have this in the users query
+          } : null
+        };
+        queryClient.setQueryData(['/api/tasks', task.id], optimisticTask);
+      }
+      
+      if (updates.projectId !== undefined) {
+        const optimisticTask = {
+          ...currentTask,
+          projectId: updates.projectId || null
+        };
+        queryClient.setQueryData(['/api/tasks', task.id], optimisticTask);
+      }
+      
+      if (updates.status) {
+        const optimisticTask = {
+          ...currentTask,
+          status: updates.status
+        };
+        queryClient.setQueryData(['/api/tasks', task.id], optimisticTask);
+      }
+      
       const response = await fetch(`/api/tasks/${task.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -197,11 +231,17 @@ export function TaskModal({ task, isOpen, onClose }: TaskModalProps) {
       
       return response.json();
     },
-    onSuccess: () => {
+    onSuccess: (updatedTask) => {
+      // Update the specific task query with server response
+      queryClient.setQueryData(['/api/tasks', task?.id], updatedTask);
+      // Invalidate both the general tasks list and the specific task query
       queryClient.invalidateQueries({ queryKey: ['/api/tasks'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/tasks', task?.id] });
       toast({ title: "Task updated successfully" });
     },
     onError: (error: Error) => {
+      // Revert optimistic updates on error
+      queryClient.invalidateQueries({ queryKey: ['/api/tasks', task?.id] });
       toast({ 
         title: "Failed to update task", 
         description: error.message,
@@ -713,9 +753,19 @@ export function TaskModal({ task, isOpen, onClose }: TaskModalProps) {
             {/* Status Management */}
             <div className="flex items-center space-x-4">
               <Label>Update Status:</Label>
-              <Select value={currentTask.status} onValueChange={handleStatusChange}>
-                <SelectTrigger className="w-48" data-testid="select-task-status">
+              <Select 
+                value={currentTask.status} 
+                onValueChange={handleStatusChange}
+                disabled={updateTaskMutation.isPending}
+              >
+                <SelectTrigger 
+                  className={`w-48 ${updateTaskMutation.isPending ? 'opacity-50' : ''}`} 
+                  data-testid="select-task-status"
+                >
                   <SelectValue />
+                  {updateTaskMutation.isPending && (
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary ml-2" />
+                  )}
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="OPEN">Open</SelectItem>
@@ -725,6 +775,70 @@ export function TaskModal({ task, isOpen, onClose }: TaskModalProps) {
                   <SelectItem value="DONE">Done</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+
+            {/* Assignment Management */}
+            <div className="space-y-4">
+              <h4 className="font-medium text-foreground">Assignment</h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="edit-assignee" className="flex items-center space-x-2">
+                    <span>Assignee</span>
+                    {updateTaskMutation.isPending && updateTaskMutation.variables?.assigneeId !== undefined && (
+                      <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-primary" />
+                    )}
+                  </Label>
+                  <Select 
+                    value={currentTask.assignee?.id || ''} 
+                    onValueChange={(value) => updateTaskMutation.mutate({ assigneeId: value })}
+                    disabled={updateTaskMutation.isPending}
+                  >
+                    <SelectTrigger 
+                      className={updateTaskMutation.isPending ? 'opacity-50' : ''}
+                      data-testid="select-edit-task-assignee"
+                    >
+                      <SelectValue placeholder="Select assignee..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="" data-testid="option-edit-unassigned">Unassigned</SelectItem>
+                      {users?.map((user) => (
+                        <SelectItem key={user.id} value={user.id} data-testid={`option-edit-assignee-${user.id}`}>
+                          {user.name} ({user.role})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <Label htmlFor="edit-project" className="flex items-center space-x-2">
+                    <span>Project</span>
+                    {updateTaskMutation.isPending && updateTaskMutation.variables?.projectId !== undefined && (
+                      <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-primary" />
+                    )}
+                  </Label>
+                  <Select 
+                    value={currentTask.projectId || ''} 
+                    onValueChange={(value) => updateTaskMutation.mutate({ projectId: value })}
+                    disabled={updateTaskMutation.isPending}
+                  >
+                    <SelectTrigger 
+                      className={updateTaskMutation.isPending ? 'opacity-50' : ''}
+                      data-testid="select-edit-task-project"
+                    >
+                      <SelectValue placeholder="Select project..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="" data-testid="option-edit-no-project">No Project</SelectItem>
+                      {projects?.filter(project => project.status?.toLowerCase() === 'active').map((project) => (
+                        <SelectItem key={project.id} value={project.id} data-testid={`option-edit-project-${project.id}`}>
+                          {project.title}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
             </div>
 
             {/* Enhanced Definition of Done Modal */}
