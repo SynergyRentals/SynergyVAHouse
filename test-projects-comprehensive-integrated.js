@@ -359,7 +359,7 @@ async function testProjectsComprehensive() {
     }
     
     const verifiedProject = await verifyResponse.json();
-    const updatesMatch = verifiedProject.status === 'active' &&
+    const updatesMatch = verifiedProject.status?.toLowerCase() === 'active' &&
                         verifiedProject.title.includes('WORKFLOW COMPLETED');
     
     if (updatesMatch) {

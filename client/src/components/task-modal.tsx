@@ -100,6 +100,7 @@ export function TaskModal({ task, isOpen, onClose }: TaskModalProps) {
     category: '',
     priority: 3,
     assigneeId: '',
+    projectId: '',
     dueAt: '',
     description: '',
     playbookKey: ''
@@ -109,15 +110,16 @@ export function TaskModal({ task, isOpen, onClose }: TaskModalProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  // Helper function to transform assigneeId for backend compatibility
-  const transformAssigneeId = (data: any) => {
-    if (data && 'assigneeId' in data) {
-      return {
-        ...data,
-        assigneeId: data.assigneeId === '' ? null : data.assigneeId
-      };
+  // Helper function to transform assigneeId and projectId for backend compatibility
+  const transformIds = (data: any) => {
+    let result = { ...data };
+    if ('assigneeId' in result) {
+      result.assigneeId = result.assigneeId === '' ? null : result.assigneeId;
     }
-    return data;
+    if ('projectId' in result) {
+      result.projectId = result.projectId === '' ? null : result.projectId;
+    }
+    return result;
   };
 
   // Reset component state when task prop changes
@@ -129,6 +131,7 @@ export function TaskModal({ task, isOpen, onClose }: TaskModalProps) {
         category: '',
         priority: 3,
         assigneeId: '',
+        projectId: '',
         dueAt: '',
         description: '',
         playbookKey: ''
@@ -156,14 +159,19 @@ export function TaskModal({ task, isOpen, onClose }: TaskModalProps) {
     { queryKey: ['/api/users'] }
   );
 
+  // Fetch all projects for project selection
+  const { data: projects } = useQuery<Array<{id: string, title: string, status: string}>>(
+    { queryKey: ['/api/projects'] }
+  );
+
   // Get manager users for admin override
   const managerUsers = users?.filter(user => user.role.toLowerCase().includes('manager')) || [];
 
   const updateTaskMutation = useMutation({
     mutationFn: async (updates: Partial<Task>) => {
       if (!task?.id) throw new Error('No task to update');
-      // Transform assigneeId empty string to null for backend compatibility
-      const transformedUpdates = transformAssigneeId(updates);
+      // Transform assigneeId and projectId empty string to null for backend compatibility
+      const transformedUpdates = transformIds(updates);
       const response = await fetch(`/api/tasks/${task.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -203,8 +211,8 @@ export function TaskModal({ task, isOpen, onClose }: TaskModalProps) {
 
   const createTaskMutation = useMutation({
     mutationFn: async (taskData: typeof newTaskData) => {
-      // Transform assigneeId empty string to null for backend compatibility
-      const transformedTaskData = transformAssigneeId({
+      // Transform assigneeId and projectId empty string to null for backend compatibility
+      const transformedTaskData = transformIds({
         ...taskData,
         type: 'reactive', // Manual tasks created through UI are reactive
         status: 'OPEN',
@@ -562,6 +570,23 @@ export function TaskModal({ task, isOpen, onClose }: TaskModalProps) {
                     {users?.map((user) => (
                       <SelectItem key={user.id} value={user.id} data-testid={`option-assignee-${user.id}`}>
                         {user.name} ({user.role})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <Label htmlFor="task-project">Project</Label>
+                <Select value={newTaskData.projectId} onValueChange={(value) => setNewTaskData(prev => ({ ...prev, projectId: value }))}>
+                  <SelectTrigger data-testid="select-task-project">
+                    <SelectValue placeholder="Select project..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="" data-testid="option-no-project">No Project</SelectItem>
+                    {projects?.filter(project => project.status?.toLowerCase() === 'active').map((project) => (
+                      <SelectItem key={project.id} value={project.id} data-testid={`option-project-${project.id}`}>
+                        {project.title}
                       </SelectItem>
                     ))}
                   </SelectContent>
