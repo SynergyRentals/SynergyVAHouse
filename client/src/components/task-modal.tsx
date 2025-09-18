@@ -109,6 +109,17 @@ export function TaskModal({ task, isOpen, onClose }: TaskModalProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
+  // Helper function to transform assigneeId for backend compatibility
+  const transformAssigneeId = (data: any) => {
+    if (data && 'assigneeId' in data) {
+      return {
+        ...data,
+        assigneeId: data.assigneeId === '' ? null : data.assigneeId
+      };
+    }
+    return data;
+  };
+
   // Reset component state when task prop changes
   useEffect(() => {
     setIsCreatingNew(!task);
@@ -151,10 +162,12 @@ export function TaskModal({ task, isOpen, onClose }: TaskModalProps) {
   const updateTaskMutation = useMutation({
     mutationFn: async (updates: Partial<Task>) => {
       if (!task?.id) throw new Error('No task to update');
+      // Transform assigneeId empty string to null for backend compatibility
+      const transformedUpdates = transformAssigneeId(updates);
       const response = await fetch(`/api/tasks/${task.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updates),
+        body: JSON.stringify(transformedUpdates),
       });
       
       if (!response.ok) {
@@ -190,15 +203,17 @@ export function TaskModal({ task, isOpen, onClose }: TaskModalProps) {
 
   const createTaskMutation = useMutation({
     mutationFn: async (taskData: typeof newTaskData) => {
+      // Transform assigneeId empty string to null for backend compatibility
+      const transformedTaskData = transformAssigneeId({
+        ...taskData,
+        type: 'reactive', // Manual tasks created through UI are reactive
+        status: 'OPEN',
+        dueAt: taskData.dueAt || null,
+      });
       const response = await fetch('/api/tasks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...taskData,
-          type: 'reactive', // Manual tasks created through UI are reactive
-          status: 'OPEN',
-          dueAt: taskData.dueAt || null,
-        }),
+        body: JSON.stringify(transformedTaskData),
       });
       
       if (!response.ok) {
@@ -532,6 +547,23 @@ export function TaskModal({ task, isOpen, onClose }: TaskModalProps) {
                     <SelectItem value="3">🟡 Medium (3)</SelectItem>
                     <SelectItem value="4">🟢 Low (4)</SelectItem>
                     <SelectItem value="5">🟢 Low (5)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <Label htmlFor="task-assignee">Assignee</Label>
+                <Select value={newTaskData.assigneeId} onValueChange={(value) => setNewTaskData(prev => ({ ...prev, assigneeId: value }))}>
+                  <SelectTrigger data-testid="select-task-assignee">
+                    <SelectValue placeholder="Select assignee..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="" data-testid="option-unassigned">Unassigned</SelectItem>
+                    {users?.map((user) => (
+                      <SelectItem key={user.id} value={user.id} data-testid={`option-assignee-${user.id}`}>
+                        {user.name} ({user.role})
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
