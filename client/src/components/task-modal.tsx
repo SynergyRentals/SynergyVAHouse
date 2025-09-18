@@ -16,6 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { safeText, urlSafeHref } from "@/lib/utils";
+import { TASK_CATEGORY_OPTIONS } from "@shared/schema";
 import { 
   Clock, 
   User, 
@@ -516,31 +517,23 @@ export function TaskModal({ task, isOpen, onClose }: TaskModalProps) {
               </div>
               
               <div>
-                <div className="flex items-center justify-between mb-2">
-                  <Label htmlFor="task-category">Category *</Label>
-                  <span className={`text-xs ${
-                    newTaskData.category.length > 90 
-                      ? 'text-red-600' 
-                      : newTaskData.category.length > 80 
-                        ? 'text-yellow-600' 
-                        : 'text-muted-foreground'
-                  }`}>
-                    {newTaskData.category.length}/100
-                  </span>
-                </div>
-                <Input
-                  id="task-category"
-                  value={newTaskData.category}
-                  onChange={(e) => {
-                    if (e.target.value.length <= 100) {
-                      setNewTaskData(prev => ({ ...prev, category: e.target.value }))
-                    }
-                  }}
-                  maxLength={100}
-                  placeholder="e.g., support.urgent (max 100 chars)"
-                  className={newTaskData.category.length > 90 ? 'border-red-300 focus:border-red-500' : ''}
-                  data-testid="input-task-category"
-                />
+                <Label htmlFor="task-category">Category *</Label>
+                <Select value={newTaskData.category} onValueChange={(value) => setNewTaskData(prev => ({ ...prev, category: value }))}>
+                  <SelectTrigger data-testid="select-task-category">
+                    <SelectValue placeholder="Select a category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {TASK_CATEGORY_OPTIONS.map((option) => (
+                      <SelectItem 
+                        key={option.value} 
+                        value={option.value}
+                        data-testid={`option-category-${option.value}`}
+                      >
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               
               <div>

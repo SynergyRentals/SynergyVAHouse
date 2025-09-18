@@ -8,6 +8,20 @@ import type { InferSelectModel, InferInsertModel } from "drizzle-orm";
 export const taskTypeEnum = pgEnum('task_type', ['daily', 'weekly', 'reactive', 'project', 'follow_up']);
 export const taskStatusEnum = pgEnum('task_status', ['OPEN', 'IN_PROGRESS', 'WAITING', 'BLOCKED', 'DONE']);
 
+// Task category constants for shared use across frontend and backend
+export const TASK_CATEGORIES = {
+  daily: 'Daily Tasks',
+  weekly: 'Weekly Tasks', 
+  reactive: 'Reactive Tasks',
+  project: 'Project Tasks',
+  follow_up: 'Follow Up Tasks'
+} as const;
+
+export const TASK_CATEGORY_OPTIONS = Object.entries(TASK_CATEGORIES).map(([value, label]) => ({
+  value,
+  label
+}));
+
 // Session storage table for Replit Auth
 export const sessions = pgTable(
   "sessions",
