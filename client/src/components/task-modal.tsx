@@ -90,6 +90,8 @@ interface TaskModalProps {
 }
 
 export function TaskModal({ task, isOpen, onClose }: TaskModalProps) {
+  console.log('TaskModal render:', { task, isOpen, isCreatingNew: !task });
+  
   const [isCompleting, setIsCompleting] = useState(false);
   const [evidenceData, setEvidenceData] = useState<Record<string, any>>({});
   const [newComment, setNewComment] = useState("");
@@ -158,14 +160,24 @@ export function TaskModal({ task, isOpen, onClose }: TaskModalProps) {
   });
 
   // Fetch all users for admin override
-  const { data: users } = useQuery<Array<{id: string, name: string, role: string}>>(
+  const { data: users, isLoading: usersLoading, error: usersError } = useQuery<Array<{id: string, name: string, role: string}>>(
     { queryKey: ['/api/users'] }
   );
 
   // Fetch all projects for project selection
-  const { data: projects } = useQuery<Array<{id: string, title: string, status: string}>>(
+  const { data: projects, isLoading: projectsLoading, error: projectsError } = useQuery<Array<{id: string, title: string, status: string}>>(
     { queryKey: ['/api/projects'] }
   );
+
+  console.log('Query data status:', {
+    users: users?.length || 0,
+    usersLoading,
+    usersError: usersError?.message,
+    projects: projects?.length || 0,
+    projectsLoading,
+    projectsError: projectsError?.message,
+    TASK_CATEGORY_OPTIONS: TASK_CATEGORY_OPTIONS?.length || 0
+  });
 
   // Get manager users for admin override
   const managerUsers = users?.filter(user => user.role.toLowerCase().includes('manager')) || [];
@@ -507,15 +519,21 @@ export function TaskModal({ task, isOpen, onClose }: TaskModalProps) {
               <DialogTitle className="text-xl mb-2">
                 {isCreatingNew ? "Create New Task" : safeText(currentTask?.title) || "Loading..."}
               </DialogTitle>
-              {!isCreatingNew && currentTask && (
-                <DialogDescription className="flex items-center space-x-4">
-                  <Badge className={getStatusColor(currentTask.status)}>
-                    {currentTask.status.replace('_', ' ')}
-                  </Badge>
-                  <span className="text-lg">{getPriorityIcon(currentTask.priority)}</span>
-                  <span>{safeText(currentTask.category).replace(/\./g, ' → ')}</span>
-                </DialogDescription>
-              )}
+              <DialogDescription>
+                {isCreatingNew ? (
+                  "Fill out the form below to create a new task. Required fields are marked with an asterisk (*)."
+                ) : currentTask ? (
+                  <div className="flex items-center space-x-4">
+                    <Badge className={getStatusColor(currentTask.status)}>
+                      {currentTask.status.replace('_', ' ')}
+                    </Badge>
+                    <span className="text-lg">{getPriorityIcon(currentTask.priority)}</span>
+                    <span>{safeText(currentTask.category).replace(/\./g, ' → ')}</span>
+                  </div>
+                ) : (
+                  "Loading task details..."
+                )}
+              </DialogDescription>
             </div>
           </div>
         </DialogHeader>
@@ -563,15 +581,18 @@ export function TaskModal({ task, isOpen, onClose }: TaskModalProps) {
                     <SelectValue placeholder="Select a category" />
                   </SelectTrigger>
                   <SelectContent>
-                    {TASK_CATEGORY_OPTIONS.map((option) => (
-                      <SelectItem 
-                        key={option.value} 
-                        value={option.value}
-                        data-testid={`option-category-${option.value}`}
-                      >
-                        {option.label}
-                      </SelectItem>
-                    ))}
+                    {(TASK_CATEGORY_OPTIONS || []).map((option) => {
+                      console.log('Rendering category option:', option);
+                      return (
+                        <SelectItem 
+                          key={option?.value || 'unknown'} 
+                          value={option?.value || ''}
+                          data-testid={`option-category-${option?.value || 'unknown'}`}
+                        >
+                          {option?.label || 'Unknown Category'}
+                        </SelectItem>
+                      );
+                    })}
                   </SelectContent>
                 </Select>
               </div>
@@ -600,11 +621,18 @@ export function TaskModal({ task, isOpen, onClose }: TaskModalProps) {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="" data-testid="option-unassigned">Unassigned</SelectItem>
-                    {users?.map((user) => (
-                      <SelectItem key={user.id} value={user.id} data-testid={`option-assignee-${user.id}`}>
-                        {user.name} ({user.role})
-                      </SelectItem>
-                    ))}
+                    {usersLoading ? (
+                      <SelectItem value="loading" disabled>Loading users...</SelectItem>
+                    ) : usersError ? (
+                      <SelectItem value="error" disabled>Error loading users</SelectItem>
+                    ) : (users || []).map((user) => {
+                      console.log('Rendering user option:', user);
+                      return (
+                        <SelectItem key={user?.id || 'unknown'} value={user?.id || ''} data-testid={`option-assignee-${user?.id}`}>
+                          {user?.name || 'Unknown User'} ({user?.role || 'Unknown Role'})
+                        </SelectItem>
+                      );
+                    })}
                   </SelectContent>
                 </Select>
               </div>
@@ -617,11 +645,18 @@ export function TaskModal({ task, isOpen, onClose }: TaskModalProps) {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="" data-testid="option-no-project">No Project</SelectItem>
-                    {projects?.filter(project => project.status?.toLowerCase() === 'active').map((project) => (
-                      <SelectItem key={project.id} value={project.id} data-testid={`option-project-${project.id}`}>
-                        {project.title}
-                      </SelectItem>
-                    ))}
+                    {projectsLoading ? (
+                      <SelectItem value="loading" disabled>Loading projects...</SelectItem>
+                    ) : projectsError ? (
+                      <SelectItem value="error" disabled>Error loading projects</SelectItem>
+                    ) : (projects || []).filter(project => project?.status?.toLowerCase() === 'active').map((project) => {
+                      console.log('Rendering project option:', project);
+                      return (
+                        <SelectItem key={project?.id || 'unknown'} value={project?.id || ''} data-testid={`option-project-${project?.id}`}>
+                          {project?.title || 'Unknown Project'}
+                        </SelectItem>
+                      );
+                    })}
                   </SelectContent>
                 </Select>
               </div>
