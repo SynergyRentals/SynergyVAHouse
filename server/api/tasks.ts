@@ -585,3 +585,70 @@ export async function registerTasksAPI(app: Express) {
   });
 
 }
+
+  // Auto-assignment endpoints
+  app.post('/api/tasks/:id/auto-assign', requireAuth, requirePermission('tasks', 'update'), async (req, res) => {
+    try {
+      const { autoAssignTask } = await import('../services/taskAssignment');
+      const { id } = req.params;
+      const preferences = req.body.preferences || {};
+      const result = await autoAssignTask(id, preferences);
+      if (!result.success) {
+        return res.status(400).json({ error: result.reason });
+      }
+      res.json(result);
+    } catch (error) {
+      console.error('Error auto-assigning task:', error);
+      res.status(500).json({ error: 'Failed to auto-assign task' });
+    }
+  });
+
+  app.get('/api/tasks/workloads', requireAuth, async (req, res) => {
+    try {
+      const { getVAWorkloads } = await import('../services/taskAssignment');
+      const workloads = await getVAWorkloads();
+      res.json({ workloads });
+    } catch (error) {
+      console.error('Error getting VA workloads:', error);
+      res.status(500).json({ error: 'Failed to get workloads' });
+    }
+  });
+
+  app.get('/api/tasks/recommendations', requireAuth, async (req, res) => {
+    try {
+      const { getRecommendations } = await import('../services/taskAssignment');
+      const recommendations = await getRecommendations();
+      res.json({ recommendations });
+    } catch (error) {
+      console.error('Error getting recommendations:', error);
+      res.status(500).json({ error: 'Failed to get recommendations' });
+    }
+  });
+
+  app.post('/api/tasks/rebalance', requireAuth, requirePermission('tasks', 'update'), async (req, res) => {
+    try {
+      const { rebalanceWorkload } = await import('../services/taskAssignment');
+      const { maxTasksPerVA } = req.body;
+      const result = await rebalanceWorkload(maxTasksPerVA);
+      res.json(result);
+    } catch (error) {
+      console.error('Error rebalancing workload:', error);
+      res.status(500).json({ error: 'Failed to rebalance workload' });
+    }
+  });
+
+  app.post('/api/tasks/batch-assign', requireAuth, requirePermission('tasks', 'update'), async (req, res) => {
+    try {
+      const { batchAutoAssign } = await import('../services/taskAssignment');
+      const { taskIds, preferences } = req.body;
+      if (!Array.isArray(taskIds)) {
+        return res.status(400).json({ error: 'taskIds must be an array' });
+      }
+      const results = await batchAutoAssign(taskIds, preferences || {});
+      res.json({ results });
+    } catch (error) {
+      console.error('Error batch assigning tasks:', error);
+      res.status(500).json({ error: 'Failed to batch assign tasks' });
+    }
+  });
+}
