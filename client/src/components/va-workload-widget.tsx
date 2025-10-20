@@ -34,7 +34,7 @@ export function VAWorkloadWidget() {
         body: JSON.stringify({ maxTasksPerVA: 5 }),
       });
       const result = await response.json();
-      alert(\`Rebalanced \${result.rebalanced} tasks!\\n\${result.details.join('\\n')}\`);
+      alert(`Rebalanced ${result.rebalanced} tasks!\n${result.details.join('\n')}`);
       refetch();
     } catch (error) {
       alert('Failed to rebalance workload');
@@ -47,15 +47,15 @@ export function VAWorkloadWidget() {
     return (
       <Card>
         <CardHeader>
-          <CardTitle className=\"flex items-center gap-2\">
-            <Users className=\"h-5 w-5\" />
+          <CardTitle className="flex items-center gap-2">
+            <Users className="h-5 w-5" />
             VA Workload
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className=\"animate-pulse space-y-2\">
-            <div className=\"h-12 bg-muted rounded\"></div>
-            <div className=\"h-12 bg-muted rounded\"></div>
+          <div className="animate-pulse space-y-2">
+            <div className="h-12 bg-muted rounded"></div>
+            <div className="h-12 bg-muted rounded"></div>
           </div>
         </CardContent>
       </Card>
@@ -68,23 +68,23 @@ export function VAWorkloadWidget() {
   return (
     <Card>
       <CardHeader>
-        <div className=\"flex items-center justify-between\">
-          <CardTitle className=\"flex items-center gap-2\">
-            <Users className=\"h-5 w-5\" />
+        <div className="flex items-center justify-between">
+          <CardTitle className="flex items-center gap-2">
+            <Users className="h-5 w-5" />
             VA Workload
           </CardTitle>
-          <div className=\"flex gap-2\">
+          <div className="flex gap-2">
             <Button 
-              size=\"sm\" 
-              variant=\"outline\"
+              size="sm" 
+              variant="outline"
               onClick={() => refetch()}
             >
-              <RefreshCw className=\"h-4 w-4\" />
+              <RefreshCw className="h-4 w-4" />
             </Button>
             {overloadedVAs.length > 0 && (
               <Button 
-                size=\"sm\" 
-                variant=\"destructive\"
+                size="sm" 
+                variant="destructive"
                 onClick={handleRebalance}
                 disabled={isRebalancing}
               >
@@ -95,30 +95,30 @@ export function VAWorkloadWidget() {
         </div>
       </CardHeader>
       <CardContent>
-        <div className=\"space-y-3\">
+        <div className="space-y-3">
           {workloads.length === 0 ? (
-            <p className=\"text-sm text-muted-foreground\">No active VAs found</p>
+            <p className="text-sm text-muted-foreground">No active VAs found</p>
           ) : (
             workloads.map(va => (
               <div 
                 key={va.userId}
-                className=\"flex items-center justify-between p-3 rounded-lg border\"
+                className="flex items-center justify-between p-3 rounded-lg border"
               >
-                <div className=\"flex items-center gap-3 flex-1\">
-                  <div className=\"flex flex-col\">
-                    <span className=\"font-medium text-sm\">{va.name}</span>
-                    <span className=\"text-xs text-muted-foreground\">
+                <div className="flex items-center gap-3 flex-1">
+                  <div className="flex flex-col">
+                    <span className="font-medium text-sm">{va.name}</span>
+                    <span className="text-xs text-muted-foreground">
                       {va.isAvailable ? '🟢 Available' : '⚫ Off Shift'}
                     </span>
                   </div>
                 </div>
                 
-                <div className=\"flex items-center gap-4\">
-                  <div className=\"text-right\">
-                    <p className=\"text-sm font-medium\">
+                <div className="flex items-center gap-4">
+                  <div className="text-right">
+                    <p className="text-sm font-medium">
                       {va.openTaskCount} open
                     </p>
-                    <p className=\"text-xs text-muted-foreground\">
+                    <p className="text-xs text-muted-foreground">
                       {va.todayCompletedCount} done today
                     </p>
                   </div>
@@ -129,7 +129,7 @@ export function VAWorkloadWidget() {
                       va.capacityScore >= 40 ? 'secondary' :
                       'destructive'
                     }
-                    className=\"min-w-[60px] justify-center\"
+                    className="min-w-[60px] justify-center"
                   >
                     {va.capacityScore}%
                   </Badge>
@@ -140,13 +140,13 @@ export function VAWorkloadWidget() {
         </div>
         
         {overloadedVAs.length > 0 && (
-          <div className=\"mt-4 p-3 bg-destructive/10 rounded-lg flex items-start gap-2\">
-            <AlertCircle className=\"h-4 w-4 text-destructive mt-0.5\" />
-            <div className=\"flex-1\">
-              <p className=\"text-sm font-medium text-destructive\">
+          <div className="mt-4 p-3 bg-destructive/10 rounded-lg flex items-start gap-2">
+            <AlertCircle className="h-4 w-4 text-destructive mt-0.5" />
+            <div className="flex-1">
+              <p className="text-sm font-medium text-destructive">
                 {overloadedVAs.length} VA(s) Overloaded
               </p>
-              <p className=\"text-xs text-muted-foreground mt-1\">
+              <p className="text-xs text-muted-foreground mt-1">
                 {overloadedVAs.map(va => va.name).join(', ')} have more than 5 open tasks
               </p>
             </div>

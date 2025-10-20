@@ -584,8 +584,6 @@ export async function registerTasksAPI(app: Express) {
     }
   });
 
-}
-
   // Auto-assignment endpoints
   app.post('/api/tasks/:id/auto-assign', requireAuth, requirePermission('tasks', 'update'), async (req, res) => {
     try {
