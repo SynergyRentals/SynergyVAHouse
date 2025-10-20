@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { SLAMonitor } from "@/components/sla-monitor";
 import { TeamStatus } from "@/components/team-status";
+import { VAWorkloadWidget } from "@/components/va-workload-widget";
 import { ActivityFeed } from "@/components/activity-feed";
 import { TaskModal } from "@/components/task-modal";
 
@@ -361,6 +362,7 @@ export default function Dashboard() {
 
             {/* Right Sidebar */}
             <div className="space-y-6">
+              <VAWorkloadWidget />
               <SLAMonitor />
               <ActivityFeed />
               <TeamStatus />
