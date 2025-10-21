@@ -243,6 +243,135 @@ export async function registerTasksAPI(app: Express) {
     }
   });
 
+  // Auto-assignment endpoints - Must be before /:id route
+  app.get('/api/tasks/workloads', requireAuth, async (req, res) => {
+    try {
+      const { getVAWorkloads } = await import('../services/taskAssignment');
+      const workloads = await getVAWorkloads();
+      res.json({ workloads });
+    } catch (error) {
+      console.error('Error getting VA workloads:', error);
+      res.status(500).json({ error: 'Failed to get workloads' });
+    }
+  });
+
+  app.get('/api/tasks/recommendations', requireAuth, async (req, res) => {
+    try {
+      const { getRecommendations } = await import('../services/taskAssignment');
+      const recommendations = await getRecommendations();
+      res.json({ recommendations });
+    } catch (error) {
+      console.error('Error getting recommendations:', error);
+      res.status(500).json({ error: 'Failed to get recommendations' });
+    }
+  });
+
+  app.get('/api/tasks/workload-summary', requireAuth, async (req, res) => {
+    try {
+      const allTasks = await storage.getTasks({});
+      const unassignedTasks = allTasks.filter(task => !task.assigneeId && task.status === 'OPEN');
+      
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      
+      const assignedToday = allTasks.filter(task => {
+        if (!task.assigneeId || !task.updatedAt) return false;
+        const updatedDate = new Date(task.updatedAt);
+        updatedDate.setHours(0, 0, 0, 0);
+        return updatedDate.getTime() === today.getTime();
+      });
+
+      // Calculate average assignment time (simplified - time from creation to assignment)
+      const recentlyAssigned = allTasks.filter(task => {
+        if (!task.assigneeId || !task.createdAt || !task.updatedAt) return false;
+        const created = new Date(task.createdAt);
+        const updated = new Date(task.updatedAt);
+        return updated.getTime() > created.getTime();
+      });
+
+      let averageAssignmentTime = 0;
+      if (recentlyAssigned.length > 0) {
+        const totalTime = recentlyAssigned.reduce((sum, task) => {
+          const created = new Date(task.createdAt!).getTime();
+          const updated = new Date(task.updatedAt!).getTime();
+          return sum + (updated - created);
+        }, 0);
+        averageAssignmentTime = Math.round((totalTime / recentlyAssigned.length) / 1000); // Convert to seconds
+      }
+
+      res.json({
+        unassignedCount: unassignedTasks.length,
+        totalAssignedToday: assignedToday.length,
+        averageAssignmentTime
+      });
+    } catch (error) {
+      console.error('Error getting workload summary:', error);
+      res.status(500).json({ error: 'Failed to get workload summary' });
+    }
+  });
+
+  app.post('/api/tasks/rebalance', requireAuth, requirePermission('tasks', 'update'), async (req, res) => {
+    try {
+      const { rebalanceWorkload } = await import('../services/taskAssignment');
+      const { maxTasksPerVA } = req.body;
+      const result = await rebalanceWorkload(maxTasksPerVA);
+      res.json(result);
+    } catch (error) {
+      console.error('Error rebalancing workload:', error);
+      res.status(500).json({ error: 'Failed to rebalance workload' });
+    }
+  });
+
+  app.post('/api/tasks/batch-assign', requireAuth, requirePermission('tasks', 'update'), async (req, res) => {
+    try {
+      const { batchAutoAssign } = await import('../services/taskAssignment');
+      const { taskIds, preferences } = req.body;
+      if (!Array.isArray(taskIds)) {
+        return res.status(400).json({ error: 'taskIds must be an array' });
+      }
+      const results = await batchAutoAssign(taskIds, preferences || {});
+      res.json({ results });
+    } catch (error) {
+      console.error('Error batch assigning tasks:', error);
+      res.status(500).json({ error: 'Failed to batch assign tasks' });
+    }
+  });
+
+  app.post('/api/tasks/auto-assign-all', requireAuth, requirePermission('tasks', 'update'), async (req, res) => {
+    try {
+      const { getRecommendations, autoAssignTask } = await import('../services/taskAssignment');
+      const recommendations = await getRecommendations();
+      
+      const results = {
+        total: recommendations.length,
+        successful: 0,
+        failed: 0,
+        details: [] as Array<{ taskId: string; success: boolean; error?: string }>
+      };
+
+      for (const rec of recommendations) {
+        try {
+          const result = await autoAssignTask(rec.taskId);
+          if (result.success) {
+            results.successful++;
+            results.details.push({ taskId: rec.taskId, success: true });
+          } else {
+            results.failed++;
+            results.details.push({ taskId: rec.taskId, success: false, error: result.reason });
+          }
+        } catch (error: any) {
+          results.failed++;
+          results.details.push({ taskId: rec.taskId, success: false, error: error.message });
+        }
+      }
+
+      res.json(results);
+    } catch (error) {
+      console.error('Error auto-assigning all tasks:', error);
+      res.status(500).json({ error: 'Failed to auto-assign all tasks' });
+    }
+  });
+
   // Get single task - RBAC Protected
   app.get('/api/tasks/:id', requireAuth as any, requirePermission('tasks', 'read'), async (req: AuthenticatedRequest, res) => {
     try {
@@ -584,7 +713,7 @@ export async function registerTasksAPI(app: Express) {
     }
   });
 
-  // Auto-assignment endpoints
+  // Auto-assignment endpoint for specific task
   app.post('/api/tasks/:id/auto-assign', requireAuth, requirePermission('tasks', 'update'), async (req, res) => {
     try {
       const { autoAssignTask } = await import('../services/taskAssignment');
@@ -598,134 +727,6 @@ export async function registerTasksAPI(app: Express) {
     } catch (error) {
       console.error('Error auto-assigning task:', error);
       res.status(500).json({ error: 'Failed to auto-assign task' });
-    }
-  });
-
-  app.get('/api/tasks/workloads', requireAuth, async (req, res) => {
-    try {
-      const { getVAWorkloads } = await import('../services/taskAssignment');
-      const workloads = await getVAWorkloads();
-      res.json({ workloads });
-    } catch (error) {
-      console.error('Error getting VA workloads:', error);
-      res.status(500).json({ error: 'Failed to get workloads' });
-    }
-  });
-
-  app.get('/api/tasks/recommendations', requireAuth, async (req, res) => {
-    try {
-      const { getRecommendations } = await import('../services/taskAssignment');
-      const recommendations = await getRecommendations();
-      res.json({ recommendations });
-    } catch (error) {
-      console.error('Error getting recommendations:', error);
-      res.status(500).json({ error: 'Failed to get recommendations' });
-    }
-  });
-
-  app.post('/api/tasks/rebalance', requireAuth, requirePermission('tasks', 'update'), async (req, res) => {
-    try {
-      const { rebalanceWorkload } = await import('../services/taskAssignment');
-      const { maxTasksPerVA } = req.body;
-      const result = await rebalanceWorkload(maxTasksPerVA);
-      res.json(result);
-    } catch (error) {
-      console.error('Error rebalancing workload:', error);
-      res.status(500).json({ error: 'Failed to rebalance workload' });
-    }
-  });
-
-  app.post('/api/tasks/batch-assign', requireAuth, requirePermission('tasks', 'update'), async (req, res) => {
-    try {
-      const { batchAutoAssign } = await import('../services/taskAssignment');
-      const { taskIds, preferences } = req.body;
-      if (!Array.isArray(taskIds)) {
-        return res.status(400).json({ error: 'taskIds must be an array' });
-      }
-      const results = await batchAutoAssign(taskIds, preferences || {});
-      res.json({ results });
-    } catch (error) {
-      console.error('Error batch assigning tasks:', error);
-      res.status(500).json({ error: 'Failed to batch assign tasks' });
-    }
-  });
-
-  app.post('/api/tasks/auto-assign-all', requireAuth, requirePermission('tasks', 'update'), async (req, res) => {
-    try {
-      const { getRecommendations, autoAssignTask } = await import('../services/taskAssignment');
-      const recommendations = await getRecommendations();
-      
-      const results = {
-        total: recommendations.length,
-        successful: 0,
-        failed: 0,
-        details: [] as Array<{ taskId: string; success: boolean; error?: string }>
-      };
-
-      for (const rec of recommendations) {
-        try {
-          const result = await autoAssignTask(rec.taskId);
-          if (result.success) {
-            results.successful++;
-            results.details.push({ taskId: rec.taskId, success: true });
-          } else {
-            results.failed++;
-            results.details.push({ taskId: rec.taskId, success: false, error: result.reason });
-          }
-        } catch (error: any) {
-          results.failed++;
-          results.details.push({ taskId: rec.taskId, success: false, error: error.message });
-        }
-      }
-
-      res.json(results);
-    } catch (error) {
-      console.error('Error auto-assigning all tasks:', error);
-      res.status(500).json({ error: 'Failed to auto-assign all tasks' });
-    }
-  });
-
-  app.get('/api/tasks/workload-summary', requireAuth, async (req, res) => {
-    try {
-      const allTasks = await storage.getTasks({});
-      const unassignedTasks = allTasks.filter(task => !task.assigneeId && task.status === 'OPEN');
-      
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      
-      const assignedToday = allTasks.filter(task => {
-        if (!task.assigneeId || !task.updatedAt) return false;
-        const updatedDate = new Date(task.updatedAt);
-        updatedDate.setHours(0, 0, 0, 0);
-        return updatedDate.getTime() === today.getTime();
-      });
-
-      // Calculate average assignment time (simplified - time from creation to assignment)
-      const recentlyAssigned = allTasks.filter(task => {
-        if (!task.assigneeId || !task.createdAt || !task.updatedAt) return false;
-        const created = new Date(task.createdAt);
-        const updated = new Date(task.updatedAt);
-        return updated.getTime() > created.getTime();
-      });
-
-      let averageAssignmentTime = 0;
-      if (recentlyAssigned.length > 0) {
-        const totalTime = recentlyAssigned.reduce((sum, task) => {
-          const created = new Date(task.createdAt!).getTime();
-          const updated = new Date(task.updatedAt!).getTime();
-          return sum + (updated - created);
-        }, 0);
-        averageAssignmentTime = Math.round((totalTime / recentlyAssigned.length) / 1000); // Convert to seconds
-      }
-
-      res.json({
-        unassignedCount: unassignedTasks.length,
-        totalAssignedToday: assignedToday.length,
-        averageAssignmentTime
-      });
-    } catch (error) {
-      console.error('Error getting workload summary:', error);
-      res.status(500).json({ error: 'Failed to get workload summary' });
     }
   });
 }
