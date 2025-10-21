@@ -1,0 +1,166 @@
+Please create a new file: client/src/components/auto-assign-button.tsx
+
+This file should contain 3 React components for the task auto-assignment system:
+
+1. AutoAssignButton - A button component that:
+   - Accepts props: taskId, onAssigned callback, disabled, size, variant
+   - Calls POST /api/tasks/{taskId}/auto-assign when clicked
+   - Shows loading state while assigning (spinner + "Assigning..." text)
+   - On success: displays toast with assigned VA name and reason
+   - Shows alternatives in toast if available
+   - On error: displays error toast
+   - Uses Zap icon from lucide-react
+   - Has tooltip: "Automatically assign to best-available VA"
+
+2. BulkAutoAssignButton - A button for batch assignment that:
+   - Accepts props: taskIds array, onCompleted callback, disabled
+   - Calls POST /api/tasks/batch-assign with taskIds in body
+   - Shows progress indicator during assignment
+   - Displays summary toast with success/failed counts
+   - Shows task count in button text: "Auto-Assign Selected (X)"
+   - Disabled when no tasks selected
+
+3. CapacityBadge - A visual indicator that:
+   - Accepts props: capacityScore (0-100), size, showLabel
+   - Shows color-coded badge:
+     * Green (80-100): default variant
+     * Yellow (50-79): secondary variant
+     * Red (0-49): destructive variant
+   - Has colored dot indicator matching the badge color
+   - Tooltip shows: "Current capacity: X/100" with explanation
+   - Size variants: 'sm' and 'default'
+
+Technical requirements:
+- Use TypeScript with proper interfaces
+- Import from: @/components/ui/button, @/components/ui/badge, @/components/ui/tooltip
+- Use lucide-react icons: Loader2, Zap, CheckCircle2, AlertCircle
+- Use useToast hook from @/hooks/use-toast
+- All components should handle errors gracefully
+- Use React.useState for loading states
+- Export all 3 components
+
+Please create this file with production-ready code now.
+```
+
+---
+
+## 📝 **PROMPT 2: Update VA Workload Widget**
+
+Copy and paste this into Replit Agent:
+```
+Please update the existing file: client/src/components/va-workload-widget.tsx
+
+Replace it with an enhanced version that includes:
+
+Component Features:
+- Fetches VA workload data from GET /api/tasks/workloads endpoint
+- Auto-refreshes every 30 seconds using setInterval
+- Displays each VA with:
+  * Color-coded status dot (green if available, red if offline)
+  * VA name and timezone
+  * Capacity score (0-100) as large number with color:
+    - Green text for 80-100
+    - Yellow text for 50-79
+    - Red text for 0-49
+  * Task counts shown as badges: "X open", "Y in progress"
+  * "Z completed today" text
+  * All in a card with hover effect
+
+UI Elements:
+- Card header with "VA Workload Status" title and Users icon
+- "Refresh" button (ghost variant)
+- "Rebalance" button (outline variant) that:
+  * Only shows if any VA has capacityScore < 30
+  * Calls POST /api/tasks/rebalance when clicked
+  * Shows loading state: "Rebalancing..." with spinner
+  * Displays alert with result count on success
+- Last updated timestamp
+- Summary statistics at bottom showing:
+  * Total VAs count
+  * Available now count (in green)
+  * Average capacity score
+
+State Management:
+- workloads array state
+- loading, rebalancing, error states
+- lastUpdate timestamp
+
+Helper Functions:
+- getCapacityColor(score): returns 'bg-green-500', 'bg-yellow-500', or 'bg-red-500'
+- getCapacityTextColor(score): returns 'text-green-600', 'text-yellow-600', or 'text-red-600'
+- fetchWorkloads(): async function to fetch and set data
+- handleRebalance(): async function to rebalance and refresh
+
+Technical requirements:
+- TypeScript with VAWorkload interface including: userId, name, timezone, isActive, openTaskCount, inProgressCount, todayCompletedCount, avgCompletionTimeMinutes, isAvailable, capacityScore
+- Use shadcn/ui components: Card, Button, Badge, Alert
+- Use lucide-react icons: Loader2, Users, TrendingUp, AlertTriangle
+- Proper error handling with try/catch
+- Loading state shows centered spinner
+- Error state shows destructive alert
+- Empty state shows "No active VAs found"
+
+Please update this file now with the complete implementation.
+```
+
+---
+
+## 📝 **PROMPT 3: Create Task Assignment Panel**
+
+Copy and paste this into Replit Agent:
+```
+Please create a new file: client/src/components/task-assignment-panel.tsx
+
+This component is a dashboard panel for task assignment overview with:
+
+Main Features:
+1. Stats Display (3 cards at top):
+   - Unassigned count (orange color)
+   - Assigned today count (green color)
+   - Average assignment time in seconds
+   - All in muted background cards with large numbers
+
+2. Recommended Assignments Section:
+   - Title: "Recommended Assignments" with Zap icon
+   - Fetches from GET /api/tasks/recommendations
+   - Shows top 5 recommendations
+   - Each recommendation displays:
+     * Task title
+     * Recommended VA name with User icon
+     * Reason as secondary badge
+     * Quick assign button (ghost, Zap icon) that calls POST /api/tasks/{taskId}/auto-assign
+   - Empty state: "No unassigned tasks - great job! 🎉"
+
+3. Auto-Assign All Button:
+   - Shows in header when unassignedCount > 0
+   - Calls POST /api/tasks/auto-assign-all
+   - Shows loading: "Assigning..." with spinner
+   - Success toast shows: "✓ X tasks assigned successfully" and "✗ Y tasks failed" if any failed
+   - Refreshes data after completion
+
+4. Recent Assignments Section:
+   - Title: "Recent Assignments" with Clock icon
+   - Placeholder text: "Assignment history will appear here"
+
+State Management:
+- recommendations array state
+- stats object state (unassignedCount, totalAssignedToday, averageAssignmentTime)
+- loading state
+- assigningAll state
+
+Data Fetching:
+- fetchRecommendations(): calls /api/tasks/recommendations, takes first 5
+- fetchStats(): calls /api/tasks/workload-summary, maps unassignedTasks to unassignedCount
+- handleAutoAssignAll(): calls /api/tasks/auto-assign-all, refreshes both functions after
+- useEffect to fetch both on mount
+
+Technical requirements:
+- TypeScript with interfaces for AssignmentRecommendation and AssignmentStats
+- Use shadcn/ui: Card, Button, Badge
+- Use lucide-react icons: Loader2, Zap, TrendingUp, Clock, User
+- Use useToast hook for notifications
+- Loading state shows centered spinner
+- Proper error handling with console.error
+- Grid layout for stats (grid-cols-3)
+
+Please create this file with the complete implementation now.
