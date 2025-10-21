@@ -562,7 +562,7 @@ export async function registerTasksAPI(app: Express) {
       }
 
       const updatedEvidence = { 
-        ...existingTask.evidence, 
+        ...(typeof existingTask.evidence === 'object' && existingTask.evidence !== null ? existingTask.evidence : {}), 
         ...evidenceUpdate,
         lastUpdated: new Date()
       };
@@ -647,6 +647,85 @@ export async function registerTasksAPI(app: Express) {
     } catch (error) {
       console.error('Error batch assigning tasks:', error);
       res.status(500).json({ error: 'Failed to batch assign tasks' });
+    }
+  });
+
+  app.post('/api/tasks/auto-assign-all', requireAuth, requirePermission('tasks', 'update'), async (req, res) => {
+    try {
+      const { getRecommendations, autoAssignTask } = await import('../services/taskAssignment');
+      const recommendations = await getRecommendations();
+      
+      const results = {
+        total: recommendations.length,
+        successful: 0,
+        failed: 0,
+        details: [] as Array<{ taskId: string; success: boolean; error?: string }>
+      };
+
+      for (const rec of recommendations) {
+        try {
+          const result = await autoAssignTask(rec.taskId);
+          if (result.success) {
+            results.successful++;
+            results.details.push({ taskId: rec.taskId, success: true });
+          } else {
+            results.failed++;
+            results.details.push({ taskId: rec.taskId, success: false, error: result.reason });
+          }
+        } catch (error: any) {
+          results.failed++;
+          results.details.push({ taskId: rec.taskId, success: false, error: error.message });
+        }
+      }
+
+      res.json(results);
+    } catch (error) {
+      console.error('Error auto-assigning all tasks:', error);
+      res.status(500).json({ error: 'Failed to auto-assign all tasks' });
+    }
+  });
+
+  app.get('/api/tasks/workload-summary', requireAuth, async (req, res) => {
+    try {
+      const allTasks = await storage.getTasks({});
+      const unassignedTasks = allTasks.filter(task => !task.assigneeId && task.status === 'OPEN');
+      
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      
+      const assignedToday = allTasks.filter(task => {
+        if (!task.assigneeId || !task.updatedAt) return false;
+        const updatedDate = new Date(task.updatedAt);
+        updatedDate.setHours(0, 0, 0, 0);
+        return updatedDate.getTime() === today.getTime();
+      });
+
+      // Calculate average assignment time (simplified - time from creation to assignment)
+      const recentlyAssigned = allTasks.filter(task => {
+        if (!task.assigneeId || !task.createdAt || !task.updatedAt) return false;
+        const created = new Date(task.createdAt);
+        const updated = new Date(task.updatedAt);
+        return updated.getTime() > created.getTime();
+      });
+
+      let averageAssignmentTime = 0;
+      if (recentlyAssigned.length > 0) {
+        const totalTime = recentlyAssigned.reduce((sum, task) => {
+          const created = new Date(task.createdAt!).getTime();
+          const updated = new Date(task.updatedAt!).getTime();
+          return sum + (updated - created);
+        }, 0);
+        averageAssignmentTime = Math.round((totalTime / recentlyAssigned.length) / 1000); // Convert to seconds
+      }
+
+      res.json({
+        unassignedCount: unassignedTasks.length,
+        totalAssignedToday: assignedToday.length,
+        averageAssignmentTime
+      });
+    } catch (error) {
+      console.error('Error getting workload summary:', error);
+      res.status(500).json({ error: 'Failed to get workload summary' });
     }
   });
 }
