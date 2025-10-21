@@ -1,4 +1,5 @@
 import type { Express, Request, Response } from 'express';
+import { App } from '@slack/bolt';
 import { setupAppHome } from './app_home';
 import { setupCommands } from './commands';
 import { setupActions } from './actions';
@@ -6,7 +7,6 @@ import { setupModals } from './modals';
 import { setupMessageEvents } from './message_events';
 
 let slackApp: any;
-let App: any;
 let botUserId: string | null = null;
 
 export async function initializeSlackApp(app: Express) {
@@ -14,10 +14,6 @@ export async function initializeSlackApp(app: Express) {
     console.log('Slack tokens not configured, skipping Slack integration');
     return;
   }
-
-  // Dynamic import to handle ES module compatibility
-  const slackBolt = await import('@slack/bolt');
-  App = slackBolt.App;
 
   slackApp = new App({
     token: process.env.SLACK_BOT_TOKEN,
