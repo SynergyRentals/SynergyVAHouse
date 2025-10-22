@@ -3,6 +3,7 @@ import { db } from '../db';
 import { webhookEvents } from '../../shared/schema';
 import { eq, and } from 'drizzle-orm';
 import crypto from 'crypto';
+import { recordIdempotencyFailure, categorizeError } from '../services/idempotencyMonitoring';
 
 // Extend Request interface to include webhook metadata
 declare global {
@@ -106,7 +107,28 @@ export async function ensureWebhookIdempotency(
     // Proceed to webhook handler
     next();
   } catch (error) {
-    console.error(`[Idempotency Error] Failed to check idempotency:`, error);
+    // Enhanced error logging with full context
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorStack = error instanceof Error ? error.stack : undefined;
+
+    console.error(`[Idempotency Error] Failed to check idempotency for event ${eventId} from ${source}:`, {
+      eventId,
+      source,
+      error: errorMessage,
+      stack: errorStack
+    });
+
+    // Record the failure for monitoring and alerting
+    const failureReason = categorizeError(error);
+    await recordIdempotencyFailure({
+      eventId,
+      source,
+      failureReason,
+      errorMessage,
+      errorStack,
+      requestBody: req.body,
+      recoveryAction: 'fail_open'
+    });
 
     // On error, fail open (allow processing) to prevent blocking legitimate webhooks
     // But log the error for investigation
