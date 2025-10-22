@@ -6,6 +6,7 @@ import crypto from 'crypto';
 import { db } from '../db';
 import { webhookEvents } from '../../shared/schema';
 import { eq, and } from 'drizzle-orm';
+import { validateWebhook, ConduitWebhookSchema } from './schemas';
 
 /**
  * Generates a deterministic event ID from webhook body if not provided
@@ -77,6 +78,24 @@ export async function setupConduitWebhooks(app: Express) {
       } catch (error) {
         console.error('Invalid JSON in Conduit webhook:', error);
         res.status(400).json({ error: 'Invalid JSON payload' });
+        return;
+      }
+
+      // Validate payload structure
+      const validationResult = ConduitWebhookSchema.safeParse(payload);
+      if (!validationResult.success) {
+        console.error('[Conduit Webhook Validation Error]', {
+          errors: validationResult.error.errors,
+          payload,
+        });
+
+        res.status(400).json({
+          error: 'Validation failed',
+          details: validationResult.error.errors.map((err) => ({
+            path: err.path.join('.'),
+            message: err.message,
+          })),
+        });
         return;
       }
 

@@ -6,6 +6,7 @@ import crypto from 'crypto';
 import { db } from '../db';
 import { webhookEvents } from '../../shared/schema';
 import { eq, and } from 'drizzle-orm';
+import { validateWebhook, SuiteOpWebhookSchema } from './schemas';
 
 /**
  * Generates a deterministic event ID from webhook body if not provided
@@ -77,6 +78,24 @@ export async function setupSuiteOpWebhooks(app: Express) {
       } catch (error) {
         console.error('Invalid JSON in SuiteOp webhook:', error);
         res.status(400).json({ error: 'Invalid JSON payload' });
+        return;
+      }
+
+      // Validate payload structure
+      const validationResult = SuiteOpWebhookSchema.safeParse(payload);
+      if (!validationResult.success) {
+        console.error('[SuiteOp Webhook Validation Error]', {
+          errors: validationResult.error.errors,
+          payload,
+        });
+
+        res.status(400).json({
+          error: 'Validation failed',
+          details: validationResult.error.errors.map((err) => ({
+            path: err.path.join('.'),
+            message: err.message,
+          })),
+        });
         return;
       }
 
