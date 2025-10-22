@@ -14,11 +14,10 @@ import { users, refreshTokens, apiKeys } from '@shared/schema';
 import type { User, InsertRefreshToken, InsertApiKey } from '@shared/schema';
 import { eq, and, gt, isNull } from 'drizzle-orm';
 import crypto from 'crypto';
+import { config } from '../config';
 
 // JWT configuration
 const JWT_SECRET = process.env.JWT_SECRET || process.env.SESSION_SECRET || 'development-jwt-secret-change-in-production';
-const JWT_ACCESS_TOKEN_EXPIRY = '15m'; // 15 minutes
-const JWT_REFRESH_TOKEN_EXPIRY = 7 * 24 * 60 * 60 * 1000; // 7 days in milliseconds
 
 // Slack OAuth configuration
 const SLACK_CLIENT_ID = process.env.SLACK_CLIENT_ID;
@@ -149,7 +148,7 @@ export function generateAccessToken(user: User): string {
     role: user.role,
   };
 
-  return jwt.sign(payload, JWT_ACCESS_TOKEN_EXPIRY);
+  return jwt.sign(payload, config.auth.accessTokenExpiry);
 }
 
 /**
@@ -163,7 +162,7 @@ export async function generateRefreshToken(
   // Generate cryptographically secure random token
   const token = crypto.randomBytes(32).toString('hex');
 
-  const expiresAt = new Date(Date.now() + JWT_REFRESH_TOKEN_EXPIRY);
+  const expiresAt = new Date(Date.now() + config.auth.refreshTokenExpiryMs);
 
   // Store in database
   await db.insert(refreshTokens).values({

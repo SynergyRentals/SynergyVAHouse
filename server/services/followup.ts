@@ -1,5 +1,6 @@
 import { storage } from '../storage';
 import { getSlackApp } from '../slack/bolt';
+import { config } from '../config';
 
 // Comprehensive promise detection patterns
 const PROMISE_PATTERNS = [
@@ -187,7 +188,7 @@ export async function checkOverdueFollowUps() {
       const evidence = task.evidence as any || {};
       
       // Check for T-24h reminder - robust threshold logic
-      if (hoursToDeadline <= 24 && !evidence.reminder_24h_sent) {
+      if (hoursToDeadline <= config.followup.reminder24hThreshold && !evidence.reminder_24h_sent) {
         try {
           await sendFollowUpReminder(task, assignee, '24-hour', slackApp);
           await markReminderSent(task.id, 'reminder_24h_sent');
@@ -198,7 +199,7 @@ export async function checkOverdueFollowUps() {
       }
       
       // Check for T-4h reminder - robust threshold logic
-      if (hoursToDeadline <= 4 && !evidence.reminder_4h_sent) {
+      if (hoursToDeadline <= config.followup.reminder4hThreshold && !evidence.reminder_4h_sent) {
         try {
           await sendFollowUpReminder(task, assignee, '4-hour', slackApp);
           await markReminderSent(task.id, 'reminder_4h_sent');
@@ -209,7 +210,7 @@ export async function checkOverdueFollowUps() {
       }
       
       // Check for T-1h reminder - robust threshold logic
-      if (hoursToDeadline <= 1 && hoursToDeadline > 0 && !evidence.reminder_1h_sent) {
+      if (hoursToDeadline <= config.followup.reminder1hThreshold && hoursToDeadline > 0 && !evidence.reminder_1h_sent) {
         try {
           await sendFollowUpReminder(task, assignee, '1-hour', slackApp);
           await markReminderSent(task.id, 'reminder_1h_sent');
@@ -313,7 +314,7 @@ async function escalateOverdueFollowUp(task: any, assignee: any, slackApp: any) 
   if (!slackApp) return;
   
   const metadata = task.followUpMetadata as any || {};
-  const escalationChannel = process.env.TRIAGE_CHANNEL || 'C123456'; // Default triage channel
+  const escalationChannel = process.env.TRIAGE_CHANNEL || config.defaults.triageChannelId;
   
   const escalationMessage = {
     channel: escalationChannel,
@@ -462,7 +463,7 @@ function extractTimeframe(messageText: string): any {
 // Calculate due date based on extracted timeframe
 function calculateDueDate(timeframe: any): Date {
   const now = new Date();
-  const defaultHours = 4; // Default to 4 hours if no timeframe detected
+  const defaultHours = config.followup.defaultHours;
   
   switch (timeframe.type) {
     case 'specific_time':
@@ -482,18 +483,18 @@ function calculateDueDate(timeframe: any): Date {
       
     case 'end_of_day':
       const eod = new Date(now);
-      eod.setHours(17, 0, 0, 0); // 5 PM
+      eod.setHours(config.defaultTimes.endOfDayHour, 0, 0, 0);
       return eod > now ? eod : new Date(eod.getTime() + 24 * 60 * 60 * 1000);
       
     case 'tomorrow':
       const tomorrow = new Date(now);
       tomorrow.setDate(tomorrow.getDate() + 1);
-      tomorrow.setHours(9, 0, 0, 0); // 9 AM tomorrow
+      tomorrow.setHours(config.defaultTimes.defaultStartHour, 0, 0, 0);
       return tomorrow;
       
     case 'today':
     case 'later_today':
-      const laterToday = new Date(now.getTime() + 4 * 60 * 60 * 1000); // 4 hours from now
+      const laterToday = new Date(now.getTime() + config.followup.defaultHours * 60 * 60 * 1000);
       return laterToday;
       
     case 'in_minutes':
@@ -508,23 +509,23 @@ function calculateDueDate(timeframe: any): Date {
     case 'next_week':
       const nextWeek = new Date(now);
       nextWeek.setDate(nextWeek.getDate() + 7);
-      nextWeek.setHours(9, 0, 0, 0);
+      nextWeek.setHours(config.defaultTimes.defaultStartHour, 0, 0, 0);
       return nextWeek;
       
     case 'this_week':
       const endOfWeek = new Date(now);
       endOfWeek.setDate(endOfWeek.getDate() + (5 - endOfWeek.getDay())); // Friday
-      endOfWeek.setHours(17, 0, 0, 0);
+      endOfWeek.setHours(config.defaultTimes.weekEndHour, 0, 0, 0);
       return endOfWeek;
       
     case 'specific_day':
       return calculateSpecificDay(timeframe.matchedText, now);
       
     case 'few_minutes':
-      return new Date(now.getTime() + 15 * 60 * 1000); // 15 minutes
-      
+      return new Date(now.getTime() + config.followup.defaultFewMinutesMs);
+
     case 'few_hours':
-      return new Date(now.getTime() + 2 * 60 * 60 * 1000); // 2 hours
+      return new Date(now.getTime() + config.followup.defaultFewHoursMs);
       
     case 'within_timeframe':
       const multiplier = timeframe.unit === 'minutes' ? 60 * 1000 :

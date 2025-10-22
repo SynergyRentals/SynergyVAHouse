@@ -1,10 +1,11 @@
 import { storage } from '../storage';
 import { getSlackApp } from '../slack/bolt';
+import { config } from '../config';
 
 export async function startSLATimer(taskId: string, playbook: any) {
   try {
     const playbookContent = playbook.content as any;
-    const slaMinutes = playbookContent.sla?.first_response_minutes || 10;
+    const slaMinutes = playbookContent.sla?.first_response_minutes || config.sla.defaultMinutes;
     
     const slaAt = new Date(Date.now() + slaMinutes * 60 * 1000);
     
@@ -77,7 +78,7 @@ async function escalateSLABreach(task: any, slackApp: any) {
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: `*Assignee:* ${assignee ? `<@${assignee.slackId}>` : 'Unassigned'}\n*Lead:* <@${process.env.MANAGER_SLACK_ID || 'UJOREL'}>`
+            text: `*Assignee:* ${assignee ? `<@${assignee.slackId}>` : 'Unassigned'}\n*Lead:* <@${process.env.MANAGER_SLACK_ID || config.defaults.managerSlackId}>`
           }
         },
         {
