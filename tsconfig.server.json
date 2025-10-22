@@ -3,11 +3,11 @@
   "include": ["server/**/*", "shared/**/*"],
   "exclude": ["node_modules", "**/*.test.ts"],
   "compilerOptions": {
-    "module": "CommonJS",
+    "module": "ESNext",
     "target": "ES2022",
     "outDir": "./dist",
     "noEmit": false,
-    "moduleResolution": "node",
+    "moduleResolution": "bundler",
     "allowImportingTsExtensions": false,
     "skipLibCheck": true,
     "esModuleInterop": true,
