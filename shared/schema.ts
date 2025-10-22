@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, timestamp, integer, jsonb, boolean, pgEnum, index } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, timestamp, integer, jsonb, boolean, pgEnum, index, uuid } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -224,6 +224,20 @@ export const apiKeys = pgTable("api_keys", {
   index("api_keys_key_hash_idx").on(table.keyHash)
 ]);
 
+// Webhook Events table for idempotency
+export const webhookEvents = pgTable("webhook_events", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  eventId: text("event_id").notNull(),
+  source: text("source").notNull(), // 'conduit' | 'suiteop' | 'wheelhouse'
+  processedAt: timestamp("processed_at", { withTimezone: true }).notNull().defaultNow(),
+  requestBody: jsonb("request_body"),
+  taskId: varchar("task_id").references(() => tasks.id),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+}, (table) => [
+  index("webhook_events_event_id_source_idx").on(table.eventId, table.source),
+  sql`CONSTRAINT webhook_events_event_id_source_unique UNIQUE (event_id, source)`
+]);
+
 // Relations
 export const usersRelations = relations(users, ({ one, many }) => ({
   tasks: many(tasks),
@@ -325,6 +339,13 @@ export const apiKeysRelations = relations(apiKeys, ({ one }) => ({
   revoker: one(users, {
     fields: [apiKeys.revokedBy],
     references: [users.id],
+  }),
+}));
+
+export const webhookEventsRelations = relations(webhookEvents, ({ one }) => ({
+  task: one(tasks, {
+    fields: [webhookEvents.taskId],
+    references: [tasks.id],
   }),
 }));
 
@@ -472,6 +493,12 @@ export const insertApiKeySchema = createInsertSchema(apiKeys).omit({
   createdAt: true,
 });
 
+export const insertWebhookEventSchema = createInsertSchema(webhookEvents).omit({
+  id: true,
+  createdAt: true,
+  processedAt: true,
+});
+
 // Types - Using proper Drizzle inference
 export type User = InferSelectModel<typeof users>;
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -513,6 +540,9 @@ export type InsertRefreshToken = z.infer<typeof insertRefreshTokenSchema>;
 
 export type ApiKey = InferSelectModel<typeof apiKeys>;
 export type InsertApiKey = z.infer<typeof insertApiKeySchema>;
+
+export type WebhookEvent = InferSelectModel<typeof webhookEvents>;
+export type InsertWebhookEvent = z.infer<typeof insertWebhookEventSchema>;
 
 // Permission computation types
 export interface ComputedPermission {
