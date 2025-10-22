@@ -238,6 +238,23 @@ export const webhookEvents = pgTable("webhook_events", {
   sql`CONSTRAINT webhook_events_event_id_source_unique UNIQUE (event_id, source)`
 ]);
 
+// Idempotency Failures table for monitoring
+export const idempotencyFailures = pgTable("idempotency_failures", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  eventId: text("event_id").notNull(),
+  source: text("source").notNull(), // 'conduit' | 'suiteop' | 'wheelhouse'
+  failureReason: text("failure_reason").notNull(), // 'database_error', 'timeout', 'unknown'
+  errorMessage: text("error_message"),
+  errorStack: text("error_stack"),
+  requestBody: jsonb("request_body"),
+  recoveryAction: text("recovery_action").notNull().default('fail_open'), // 'fail_open', 'retry', 'blocked'
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+}, (table) => [
+  index("idempotency_failures_source_idx").on(table.source),
+  index("idempotency_failures_created_at_idx").on(table.createdAt),
+  index("idempotency_failures_failure_reason_idx").on(table.failureReason)
+]);
+
 // Relations
 export const usersRelations = relations(users, ({ one, many }) => ({
   tasks: many(tasks),
@@ -499,6 +516,11 @@ export const insertWebhookEventSchema = createInsertSchema(webhookEvents).omit({
   processedAt: true,
 });
 
+export const insertIdempotencyFailureSchema = createInsertSchema(idempotencyFailures).omit({
+  id: true,
+  createdAt: true,
+});
+
 // Types - Using proper Drizzle inference
 export type User = InferSelectModel<typeof users>;
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -543,6 +565,9 @@ export type InsertApiKey = z.infer<typeof insertApiKeySchema>;
 
 export type WebhookEvent = InferSelectModel<typeof webhookEvents>;
 export type InsertWebhookEvent = z.infer<typeof insertWebhookEventSchema>;
+
+export type IdempotencyFailure = InferSelectModel<typeof idempotencyFailures>;
+export type InsertIdempotencyFailure = z.infer<typeof insertIdempotencyFailureSchema>;
 
 // Permission computation types
 export interface ComputedPermission {

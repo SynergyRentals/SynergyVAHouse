@@ -16,9 +16,66 @@ export async function registerRoutes(app: Express): Promise<void> {
   // Setup Replit Auth middleware first
   await setupAuth(app);
 
-  // Health check
+  // Health check with idempotency monitoring
   app.get('/healthz', async (req, res) => {
-    res.json({ status: 'ok', timestamp: new Date().toISOString() });
+    try {
+      const { checkIdempotencyHealth, getFailureRate } = await import('./services/idempotencyMonitoring');
+
+      const idempotencyHealth = await checkIdempotencyHealth();
+      const failureRateLast24h = await getFailureRate(24);
+
+      res.json({
+        status: idempotencyHealth.status === 'critical' ? 'degraded' : 'ok',
+        timestamp: new Date().toISOString(),
+        idempotency: {
+          status: idempotencyHealth.status,
+          failureRate: {
+            lastHour: idempotencyHealth.failureRate,
+            last24Hours: failureRateLast24h
+          },
+          threshold: idempotencyHealth.threshold
+        }
+      });
+    } catch (error) {
+      // If monitoring fails, still return OK for basic health
+      console.error('Health check error:', error);
+      res.json({ status: 'ok', timestamp: new Date().toISOString() });
+    }
+  });
+
+  // Idempotency monitoring endpoint - RBAC Protected
+  app.get('/api/monitoring/idempotency', requireAuth as any, async (req: AuthenticatedRequest, res) => {
+    const { requirePermission } = await import('./middleware/rbac');
+    await requirePermission('system', 'audit_logs')(req, res, async () => {
+      try {
+        const { getFailureStats, checkIdempotencyHealth, failureCounter } = await import('./services/idempotencyMonitoring');
+
+        // Get query parameters
+        const hoursBack = parseInt(req.query.hours as string) || 24;
+        const since = new Date(Date.now() - hoursBack * 60 * 60 * 1000);
+
+        // Get comprehensive stats
+        const stats = await getFailureStats({ since });
+        const health = await checkIdempotencyHealth();
+        const counterBreakdown = failureCounter.getBreakdown();
+
+        res.json({
+          health,
+          stats,
+          counter: {
+            breakdown: counterBreakdown,
+            lastReset: failureCounter.getLastReset()
+          },
+          period: {
+            hoursBack,
+            since: since.toISOString()
+          }
+        });
+      } catch (error) {
+        console.error('Failed to fetch idempotency metrics:', error);
+        res.status(500).json({ error: 'Failed to fetch idempotency metrics' });
+      }
+    });
   });
 
   // Register auth routes (JWT, Slack OAuth, API keys)
