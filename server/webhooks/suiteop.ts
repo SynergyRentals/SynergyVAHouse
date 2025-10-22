@@ -3,6 +3,42 @@ import { storage } from '../storage';
 import { mapSuiteOpEventToTask } from '../services/mappers';
 import { startSLATimer } from '../services/sla';
 import crypto from 'crypto';
+import { db } from '../db';
+import { webhookEvents } from '../../shared/schema';
+import { eq, and } from 'drizzle-orm';
+
+/**
+ * Generates a deterministic event ID from webhook body if not provided
+ */
+function generateEventId(body: any): string {
+  const hash = crypto.createHash('sha256');
+  hash.update(JSON.stringify(body));
+  return hash.digest('hex');
+}
+
+/**
+ * Extracts event ID from various webhook formats
+ */
+function extractEventId(headers: any, body: any): string {
+  // Priority 1: X-Event-ID header
+  const headerEventId = headers['x-event-id'];
+  if (headerEventId && typeof headerEventId === 'string') {
+    return headerEventId;
+  }
+
+  // Priority 2: Body id field
+  if (body?.id) {
+    return String(body.id);
+  }
+
+  // Priority 3: Body event_id field
+  if (body?.event_id) {
+    return String(body.event_id);
+  }
+
+  // Fallback: Generate deterministic ID from body
+  return generateEventId(body);
+}
 
 export async function setupSuiteOpWebhooks(app: Express) {
   app.post('/webhooks/suiteop', async (req, res) => {
@@ -43,22 +79,70 @@ export async function setupSuiteOpWebhooks(app: Express) {
         res.status(400).json({ error: 'Invalid JSON payload' });
         return;
       }
-      
+
       console.log('SuiteOp webhook received:', payload.type, 'ID:', payload.id || payload.task?.id);
+
+      // Idempotency check
+      const eventId = extractEventId(req.headers, payload);
+      const source = 'suiteop';
+
+      console.log(`[Idempotency Check] source=${source} eventId=${eventId}`);
+
+      try {
+        // Check if this event has already been processed
+        const existingEvent = await db.query.webhookEvents.findFirst({
+          where: and(
+            eq(webhookEvents.eventId, eventId),
+            eq(webhookEvents.source, source)
+          )
+        });
+
+        if (existingEvent) {
+          console.log(`[Idempotency] Duplicate webhook blocked: ${eventId} from ${source}`);
+
+          // Return success (200) to prevent retries, but indicate it's a duplicate
+          res.status(200).json({
+            status: 'duplicate',
+            message: 'Event already processed',
+            eventId,
+            processedAt: existingEvent.processedAt,
+            taskId: existingEvent.taskId
+          });
+          return;
+        }
+      } catch (idempotencyError) {
+        console.error(`[Idempotency Error] Failed to check idempotency:`, idempotencyError);
+        // On error, fail open (allow processing) to prevent blocking legitimate webhooks
+      }
       
       // Map event to task based on type
+      let taskId: string | undefined;
       switch (payload.type) {
         case 'task.created':
-          await handleTaskCreated(payload);
+          taskId = await handleTaskCreated(payload);
           break;
         case 'task.updated':
-          await handleTaskUpdated(payload);
+          taskId = await handleTaskUpdated(payload);
           break;
         default:
           console.log('Unknown SuiteOp event type:', payload.type);
       }
-      
-      res.json({ status: 'processed' });
+
+      // Record webhook event for idempotency
+      try {
+        await db.insert(webhookEvents).values({
+          eventId,
+          source,
+          requestBody: payload,
+          taskId: taskId || null
+        });
+        console.log(`[Idempotency] Recorded webhook event: ${eventId}`);
+      } catch (recordError) {
+        console.error(`[Idempotency Error] Failed to record webhook event:`, recordError);
+        // Don't fail the webhook - recording failure shouldn't break processing
+      }
+
+      res.json({ status: 'processed', taskId });
     } catch (error) {
       console.error('Error processing SuiteOp webhook:', error);
       
@@ -83,15 +167,15 @@ export async function setupSuiteOpWebhooks(app: Express) {
   });
 }
 
-async function handleTaskCreated(payload: any) {
+async function handleTaskCreated(payload: any): Promise<string | undefined> {
   try {
     const taskData = await mapSuiteOpEventToTask(payload);
-    
+
     if (!taskData) {
       console.log('Could not map SuiteOp task to our task');
-      return;
+      return undefined;
     }
-    
+
     // Populate DoD schema from playbook
     let finalTaskData = {
       ...taskData,
@@ -101,52 +185,54 @@ async function handleTaskCreated(payload: any) {
       sourceId: payload.task?.id || payload.id,
       sourceUrl: payload.task?.url || payload.url
     };
-    
+
     // Get playbook and extract DoD schema
     const playbook = await storage.getPlaybook(taskData.playbookKey);
     if (playbook) {
-      const playbookContent = typeof playbook.content === 'string' ? 
+      const playbookContent = typeof playbook.content === 'string' ?
         JSON.parse(playbook.content) : playbook.content;
-      
+
       if (playbookContent.definition_of_done) {
         finalTaskData.dodSchema = playbookContent.definition_of_done;
         console.log(`[Webhook DoD] Populated DoD schema for SuiteOp task:`, finalTaskData.dodSchema);
       }
     }
-    
+
     const task = await storage.createTask(finalTaskData);
-    
+
     // Start SLA timer if category has playbook
     if (playbook) {
       await startSLATimer(task.id, playbook);
     }
-    
+
     await storage.createAudit({
       entity: 'task',
       entityId: task.id,
       action: 'created_from_suiteop',
       data: { suiteOpPayload: payload }
     });
-    
+
     console.log(`Created task ${task.id} from SuiteOp`);
+    return task.id;
   } catch (error) {
     console.error('Error handling SuiteOp task.created:', error);
+    return undefined;
   }
 }
 
-async function handleTaskUpdated(payload: any) {
+async function handleTaskUpdated(payload: any): Promise<string | undefined> {
   try {
     const sourceId = payload.task?.id || payload.id;
     const tasks = await storage.getTasks({ sourceId });
-    
+
     if (tasks.length === 0) {
       console.log('No matching task found for SuiteOp update');
-      return;
+      return undefined;
     }
-    
+
     const task = tasks[0];
     const updates: any = {};
-    
+
     // Map SuiteOp status to our status
     if (payload.task?.status === 'completed') {
       updates.status = 'DONE';
@@ -155,10 +241,10 @@ async function handleTaskUpdated(payload: any) {
     } else if (payload.task?.status === 'cancelled') {
       updates.status = 'BLOCKED';
     }
-    
+
     if (Object.keys(updates).length > 0) {
       await storage.updateTask(task.id, updates);
-      
+
       await storage.createAudit({
         entity: 'task',
         entityId: task.id,
@@ -166,9 +252,11 @@ async function handleTaskUpdated(payload: any) {
         data: { suiteOpPayload: payload, updates }
       });
     }
-    
+
     console.log(`Updated task ${task.id} from SuiteOp`);
+    return task.id;
   } catch (error) {
     console.error('Error handling SuiteOp task.updated:', error);
+    return undefined;
   }
 }
