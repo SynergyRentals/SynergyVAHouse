@@ -1,5 +1,6 @@
 import type { App } from '@slack/bolt';
 import { storage } from '../storage';
+import { config } from '../config';
 
 export function setupAppHome(app: App) {
   app.event('app_home_opened', async ({ event, client }) => {
@@ -103,7 +104,7 @@ async function renderVAView(client: any, userId: string, user: any) {
     todayTasks.slice(0, 5).forEach(task => {
       const statusEmoji = getStatusEmoji(task.status);
       const slaStatus = task.slaAt && new Date(task.slaAt) < now ? '🚨' : 
-                      task.slaAt && (new Date(task.slaAt).getTime() - now.getTime()) < 5 * 60 * 1000 ? '⚠️' : '';
+                      task.slaAt && (new Date(task.slaAt).getTime() - now.getTime()) < config.sla.warningThresholdMs ? '⚠️' : '';
       
       blocks.push({
         type: 'section',

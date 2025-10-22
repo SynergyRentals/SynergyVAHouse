@@ -2,6 +2,7 @@ import type { App } from '@slack/bolt';
 import { storage } from '../storage';
 import { satisfyFollowUp } from '../services/followup';
 import { identifyCriticalIssues } from '../services/metrics';
+import { config } from '../config';
 
 export function setupActions(app: App) {
   // Complete follow-up action
@@ -342,8 +343,8 @@ export function setupActions(app: App) {
       }
 
       if (task.slaAt) {
-        const slaStatus = new Date(task.slaAt) < new Date() ? '🚨 BREACHED' : 
-                         (new Date(task.slaAt).getTime() - new Date().getTime()) < 5 * 60 * 1000 ? '⚠️ Warning' : '✅ On track';
+        const slaStatus = new Date(task.slaAt) < new Date() ? '🚨 BREACHED' :
+                         (new Date(task.slaAt).getTime() - new Date().getTime()) < config.sla.warningThresholdMs ? '⚠️ Warning' : '✅ On track';
         blocks.push({
           type: 'section',
           text: {
@@ -938,8 +939,8 @@ export function setupActions(app: App) {
       }
 
       if (task.slaAt) {
-        const slaStatus = new Date(task.slaAt) < new Date() ? '🚨 BREACHED' : 
-                         (new Date(task.slaAt).getTime() - new Date().getTime()) < 5 * 60 * 1000 ? '⚠️ Warning' : '✅ On track';
+        const slaStatus = new Date(task.slaAt) < new Date() ? '🚨 BREACHED' :
+                         (new Date(task.slaAt).getTime() - new Date().getTime()) < config.sla.warningThresholdMs ? '⚠️ Warning' : '✅ On track';
         blocks.push({
           type: 'section',
           text: {
