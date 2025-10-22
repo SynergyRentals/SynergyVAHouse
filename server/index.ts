@@ -280,22 +280,23 @@ async function start() {
     // Initialize Slack app
     await initializeSlackApp(app);
 
-    // Create HTTP server (needed before setupVite)
+    // Register API routes (includes auth middleware)
+    await registerRoutes(app);
+
+    // Create HTTP server
     const server = createServer(app);
 
-    // Setup frontend serving FIRST (before auth middleware)
-    // This allows static files to be served without authentication
+    // Setup WebSocket server
+    await setupWebSocketServer(server);
+
+    // Setup frontend serving LAST (after API routes)
+    // In production: serve static files, then fallback to index.html for client-side routing
+    // In development: Vite dev server handles everything
     if (process.env.NODE_ENV === 'production') {
       serveStatic(app);
     } else {
       await setupVite(app, server);
     }
-
-    // Register API routes (includes auth middleware)
-    await registerRoutes(app);
-
-    // Setup WebSocket server
-    await setupWebSocketServer(server);
 
     // Start background jobs
     startScheduler();

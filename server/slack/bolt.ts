@@ -7,6 +7,7 @@ import { setupModals } from './modals';
 import { setupMessageEvents } from './message_events';
 
 const App = (SlackBolt as any).App || SlackBolt;
+const ExpressReceiver = (SlackBolt as any).ExpressReceiver || SlackBolt.ExpressReceiver;
 
 let slackApp: any;
 let botUserId: string | null = null;
@@ -17,20 +18,17 @@ export async function initializeSlackApp(app: Express) {
     return;
   }
 
+  // Use ExpressReceiver to integrate with existing Express app
+  // This prevents Slack Bolt from creating its own HTTP server
+  const receiver = new ExpressReceiver({
+    signingSecret: process.env.SLACK_SIGNING_SECRET,
+    endpoints: '/slack/events',
+    processBeforeResponse: true
+  });
+
   slackApp = new App({
     token: process.env.SLACK_BOT_TOKEN,
-    signingSecret: process.env.SLACK_SIGNING_SECRET,
-    customRoutes: [
-      {
-        path: '/slack/events',
-        method: ['POST'],
-        handler: (req: any, res: any) => {
-          // Handle Slack events
-          res.writeHead(200);
-          res.end('OK');
-        }
-      }
-    ]
+    receiver
   });
 
   // Setup Slack features
@@ -40,26 +38,10 @@ export async function initializeSlackApp(app: Express) {
   setupModals(slackApp);
   setupMessageEvents(slackApp);
 
-  // Register Slack routes with Express
-  app.post('/slack/events', async (req: Request, res: Response) => {
-    const body = req.body as any;
-    
-    // Handle URL verification
-    if (body.type === 'url_verification') {
-      res.json({ challenge: body.challenge });
-      return;
-    }
-    
-    // Handle other events
-    res.json({ ok: true });
-  });
+  // Mount the Slack receiver router to our Express app
+  app.use(receiver.router);
 
-  app.post('/slack/interactive', async (req: Request, res: Response) => {
-    // Handle interactive components
-    res.json({ ok: true });
-  });
-
-  await slackApp.start();
+  // No need to call slackApp.start() when using custom receiver with Express
   
   // Cache bot user ID for filtering
   try {
