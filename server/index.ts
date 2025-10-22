@@ -5,7 +5,7 @@ import { WebSocketServer } from 'ws';
 import { registerRoutes } from './routes';
 import { initializeSlackApp } from './slack/bolt';
 import { startScheduler } from './jobs/scheduler';
-import { log, setupVite } from './vite';
+import { log, setupVite, serveStatic } from './vite';
 import { storage } from './storage';
 import { validateEnvironmentOrThrow } from './envValidator';
 
@@ -289,8 +289,12 @@ async function start() {
     // Setup WebSocket server
     await setupWebSocketServer(server);
 
-    // Setup Vite for serving frontend
-    await setupVite(app, server);
+    // Setup frontend serving (Vite dev server in development, static files in production)
+    if (process.env.NODE_ENV === 'production') {
+      serveStatic(app);
+    } else {
+      await setupVite(app, server);
+    }
 
     // Start background jobs
     startScheduler();
