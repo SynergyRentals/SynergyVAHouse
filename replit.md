@@ -103,3 +103,19 @@ Preferred communication style: Simple, everyday language.
 - **Vite**: Fast development server and build tool with HMR
 - **ESBuild**: Fast JavaScript bundler for production builds
 - **Drizzle Kit**: Database migration and schema management tools
+
+## Recent Changes
+
+### Production Deployment Fixes (October 22, 2025)
+
+Fixed critical production deployment issues that prevented the published app from loading correctly:
+
+1. **Slack Bolt Integration**: Refactored Slack Bolt to use `ExpressReceiver` instead of creating its own HTTP server. This eliminates request interception issues and integrates cleanly with the existing Express application.
+
+2. **Middleware Ordering**: Updated body parsing middleware to exclude `/slack` routes (similar to `/webhooks`). This ensures ExpressReceiver can perform its own signature-aware raw body parsing for webhook verification, preventing signature mismatch errors.
+
+3. **Error Handling**: Enhanced error objects in `queryClient.ts` to include a `.status` property. This allows the `useAuth` hook to properly detect and handle 401 Unauthorized responses without throwing errors, enabling the login page to display correctly for unauthenticated users.
+
+4. **Production Build Flow**: Confirmed the build process works correctly with `npm run build` generating static assets in `dist/public/` and bundling the server to `dist/index.js`. The production server uses `serveStatic()` to serve the built frontend.
+
+These fixes ensure the published application now correctly displays the login page for unauthenticated users and is ready for production deployment.
