@@ -18,17 +18,18 @@ app.use('/webhooks', bodyParser.raw({
   limit: '10mb'
 }));
 
-// JSON and URL-encoded parsing for non-webhook routes
+// JSON and URL-encoded parsing for non-webhook AND non-Slack routes
+// ExpressReceiver handles its own body parsing for signature verification
 app.use((req, res, next) => {
-  if (req.path.startsWith('/webhooks')) {
-    return next(); // Skip JSON parsing for webhooks
+  if (req.path.startsWith('/webhooks') || req.path.startsWith('/slack')) {
+    return next(); // Skip JSON parsing for webhooks and Slack routes
   }
   express.json()(req, res, next);
 });
 
 app.use((req, res, next) => {
-  if (req.path.startsWith('/webhooks')) {
-    return next(); // Skip URL-encoded parsing for webhooks
+  if (req.path.startsWith('/webhooks') || req.path.startsWith('/slack')) {
+    return next(); // Skip URL-encoded parsing for webhooks and Slack routes
   }
   express.urlencoded({ extended: true })(req, res, next);
 });
