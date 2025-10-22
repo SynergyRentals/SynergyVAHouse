@@ -10,6 +10,7 @@ import { setupSuiteOpWebhooks } from "./webhooks/suiteop";
 import { setupAuth, isAuthenticated } from "./replitAuth";
 import { requireReplitAuth, requireAuth, type AuthenticatedRequest } from "./middleware/auth";
 import { z } from "zod";
+import authRoutes from "./api/auth/routes";
 
 export async function registerRoutes(app: Express): Promise<void> {
   // Setup Replit Auth middleware first
@@ -20,31 +21,12 @@ export async function registerRoutes(app: Express): Promise<void> {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
   });
 
-  // Auth routes for frontend - Use consistent authentication with dev fallback
-  app.get('/api/auth/user', requireAuth as any, async (req: AuthenticatedRequest, res) => {
-    try {
-      // User is guaranteed to be authenticated by requireAuth middleware
-      const user = req.user!;
-      
-      res.json({
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        profileImageUrl: user.profileImageUrl,
-        role: user.role,
-        department: user.department,
-        authType: user.authType || 'replit'
-      });
-    } catch (error) {
-      console.error("Error fetching authenticated user:", error);
-      res.status(500).json({ 
-        error: 'Failed to fetch user information',
-        message: 'An error occurred while retrieving user data'
-      });
-    }
-  });
+  // Register auth routes (JWT, Slack OAuth, API keys)
+  app.use('/api/auth', authRoutes);
+
+  // Legacy auth route for backward compatibility (session-based)
+  // This is now also handled by /api/auth/user in the auth routes
+  // but we keep this for any direct callers
 
   // Register API modules
   await registerTasksAPI(app);

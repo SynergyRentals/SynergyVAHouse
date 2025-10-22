@@ -1,22 +1,57 @@
 import type { Request, Response, NextFunction } from 'express';
 import { storage } from '../storage';
 import type { User as AppUser } from '@shared/schema';
+import { verifyAccessToken, verifyApiKey } from '../services/auth.service';
 
 // Re-export for backward compatibility
 export type AuthenticatedRequest = Request;
 
 /**
  * Secure authentication middleware - PRODUCTION SAFE
- * Only accepts: (1) Valid Replit Auth session OR (2) Slack-signed requests (via dedicated middleware)
- * NO header-based auth bypasses allowed in production
+ * Supports multiple authentication methods:
+ * 1. JWT Bearer tokens (Authorization: Bearer <token>)
+ * 2. API Keys (X-API-Key: <key>)
+ * 3. Replit Auth session
+ * 4. Slack-signed requests (via dedicated middleware)
+ * 5. Development fallback (dev only)
  */
 export async function requireAuth(req: Request, res: Response, next: NextFunction) {
   try {
     let user;
-    let authType: 'slack' | 'replit' | 'dev-fallback' = 'replit';
+    let authType: 'jwt' | 'apikey' | 'slack' | 'replit' | 'dev-fallback' = 'replit';
 
-    // Method 1: Check for authenticated Replit Auth session
-    if (req.isAuthenticated && req.isAuthenticated() && req.user) {
+    // Method 1: JWT Bearer Token Authentication
+    const authHeader = req.headers.authorization;
+    if (authHeader?.startsWith('Bearer ')) {
+      const token = authHeader.substring(7);
+      try {
+        const payload = verifyAccessToken(token);
+        user = await storage.getUser(payload.userId);
+        authType = 'jwt';
+      } catch (error) {
+        // JWT verification failed - continue to other methods
+        console.warn('[Auth] JWT verification failed:', error instanceof Error ? error.message : 'Unknown error');
+      }
+    }
+
+    // Method 2: API Key Authentication
+    if (!user) {
+      const apiKey = req.headers['x-api-key'] as string;
+      if (apiKey) {
+        try {
+          const apiKeyUser = await verifyApiKey(apiKey);
+          if (apiKeyUser) {
+            user = apiKeyUser;
+            authType = 'apikey';
+          }
+        } catch (error) {
+          console.warn('[Auth] API key verification failed:', error instanceof Error ? error.message : 'Unknown error');
+        }
+      }
+    }
+
+    // Method 3: Check for authenticated Replit Auth session
+    if (!user && req.isAuthenticated && req.isAuthenticated() && req.user) {
       const sessionUser = req.user as any;
       if (sessionUser.claims?.sub) {
         // User authenticated via Replit Auth - lookup by replitSub
@@ -25,7 +60,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
       }
     }
 
-    // Method 2: Check for Slack-authenticated request (must be pre-validated by validateSlackSignature middleware)
+    // Method 4: Check for Slack-authenticated request (must be pre-validated by validateSlackSignature middleware)
     if (!user && req.slackUserId) {
       // This property is only set by validateSlackSignature middleware
       // Find user by Slack ID
@@ -34,7 +69,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
       authType = 'slack';
     }
 
-    // Method 3: Development fallback ONLY (strictly prohibited in production)
+    // Method 5: Development fallback ONLY (strictly prohibited in production)
     // Additional safety checks to prevent accidental production bypass
     if (!user && 
         process.env.NODE_ENV === 'development' && 

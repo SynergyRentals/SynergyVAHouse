@@ -187,6 +187,43 @@ export const userRoles = pgTable("user_roles", {
   sql`CONSTRAINT user_roles_unique UNIQUE (user_id, role_id)`
 ]);
 
+// JWT Refresh Tokens table for secure token rotation
+export const refreshTokens = pgTable("refresh_tokens", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull(),
+  token: text("token").notNull().unique(),
+  expiresAt: timestamp("expires_at").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  revokedAt: timestamp("revoked_at"),
+  replacedBy: varchar("replaced_by"), // Token family tracking for rotation
+  deviceInfo: text("device_info"), // User agent for security tracking
+  ipAddress: text("ip_address"),
+}, (table) => [
+  index("refresh_tokens_user_id_idx").on(table.userId),
+  index("refresh_tokens_expires_at_idx").on(table.expiresAt)
+]);
+
+// API Keys table for external integrations
+export const apiKeys = pgTable("api_keys", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull(),
+  name: text("name").notNull(), // Human-readable name (e.g., "Zapier Integration")
+  keyHash: text("key_hash").notNull().unique(), // Hashed API key for security
+  keyPrefix: text("key_prefix").notNull(), // First 8 chars for display (e.g., "sk_live_...")
+  lastUsedAt: timestamp("last_used_at"),
+  expiresAt: timestamp("expires_at"),
+  isActive: boolean("is_active").notNull().default(true),
+  permissions: jsonb("permissions"), // Scoped permissions for this API key
+  rateLimit: integer("rate_limit").default(1000), // Requests per hour
+  createdBy: varchar("created_by"),
+  createdAt: timestamp("created_at").defaultNow(),
+  revokedAt: timestamp("revoked_at"),
+  revokedBy: varchar("revoked_by"),
+}, (table) => [
+  index("api_keys_user_id_idx").on(table.userId),
+  index("api_keys_key_hash_idx").on(table.keyHash)
+]);
+
 // Relations
 export const usersRelations = relations(users, ({ one, many }) => ({
   tasks: many(tasks),
@@ -265,6 +302,28 @@ export const userRolesRelations = relations(userRoles, ({ one }) => ({
   }),
   assignedByUser: one(users, {
     fields: [userRoles.assignedBy],
+    references: [users.id],
+  }),
+}));
+
+export const refreshTokensRelations = relations(refreshTokens, ({ one }) => ({
+  user: one(users, {
+    fields: [refreshTokens.userId],
+    references: [users.id],
+  }),
+}));
+
+export const apiKeysRelations = relations(apiKeys, ({ one }) => ({
+  user: one(users, {
+    fields: [apiKeys.userId],
+    references: [users.id],
+  }),
+  creator: one(users, {
+    fields: [apiKeys.createdBy],
+    references: [users.id],
+  }),
+  revoker: one(users, {
+    fields: [apiKeys.revokedBy],
     references: [users.id],
   }),
 }));
@@ -403,6 +462,16 @@ export const insertUserRoleSchema = createInsertSchema(userRoles).omit({
   createdAt: true,
 });
 
+export const insertRefreshTokenSchema = createInsertSchema(refreshTokens).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertApiKeySchema = createInsertSchema(apiKeys).omit({
+  id: true,
+  createdAt: true,
+});
+
 // Types - Using proper Drizzle inference
 export type User = InferSelectModel<typeof users>;
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -438,6 +507,12 @@ export type InsertRolePermission = z.infer<typeof insertRolePermissionSchema>;
 
 export type UserRole = InferSelectModel<typeof userRoles>;
 export type InsertUserRole = z.infer<typeof insertUserRoleSchema>;
+
+export type RefreshToken = InferSelectModel<typeof refreshTokens>;
+export type InsertRefreshToken = z.infer<typeof insertRefreshTokenSchema>;
+
+export type ApiKey = InferSelectModel<typeof apiKeys>;
+export type InsertApiKey = z.infer<typeof insertApiKeySchema>;
 
 // Permission computation types
 export interface ComputedPermission {
