@@ -7,6 +7,7 @@ import { initializeSlackApp } from './slack/bolt';
 import { startScheduler } from './jobs/scheduler';
 import { log, setupVite } from './vite';
 import { storage } from './storage';
+import { printEnvironmentStatus, validateEnvironment } from './envValidator';
 
 const app = express();
 
@@ -271,31 +272,62 @@ async function handleWebSocketMessage(ws: any, message: any, clientId: string) {
 
 async function start() {
   try {
+    console.log('\n🚀 Starting Synergy VA Ops Hub...\n');
+
+    // Validate environment variables first
+    printEnvironmentStatus();
+    const envValidation = validateEnvironment();
+
+    if (!envValidation.isValid) {
+      console.error('❌ Server cannot start due to missing environment variables.');
+      console.error('   Please configure the required variables and restart.\n');
+      process.exit(1);
+    }
+
     // Initialize Slack app
     await initializeSlackApp(app);
-    
+
     // Register API routes
     await registerRoutes(app);
-    
+
     // Create HTTP server
     const server = createServer(app);
-    
+
     // Setup WebSocket server
     await setupWebSocketServer(server);
-    
+
     // Setup Vite for serving frontend
     await setupVite(app, server);
-    
+
     // Start background jobs
     startScheduler();
-    
+
     // Start server
     const port = parseInt(process.env.PORT || '5000', 10);
     server.listen(port, '0.0.0.0', () => {
-      log(`Synergy VA Ops Hub serving on port ${port}`);
+      console.log('\n' + '='.repeat(60));
+      console.log(`✅ Synergy VA Ops Hub is running on port ${port}`);
+      console.log('='.repeat(60) + '\n');
     });
-  } catch (error) {
+  } catch (error: any) {
+    console.error('\n' + '='.repeat(60));
+    console.error('❌ FATAL ERROR: Server failed to start');
+    console.error('='.repeat(60));
+    console.error('\nError details:');
     console.error(error);
+
+    if (error.message?.includes('environment variable')) {
+      console.error('\n💡 This appears to be a configuration issue.');
+      console.error('   Please check the environment configuration above.\n');
+    } else if (error.message?.includes('EADDRINUSE')) {
+      console.error('\n💡 Port is already in use.');
+      console.error('   Try stopping other services or changing the PORT.\n');
+    } else if (error.message?.includes('database') || error.message?.includes('connection')) {
+      console.error('\n💡 Database connection failed.');
+      console.error('   Please verify DATABASE_URL is correct and database is accessible.\n');
+    }
+
+    console.error('='.repeat(60) + '\n');
     process.exit(1);
   }
 }

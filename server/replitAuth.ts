@@ -10,16 +10,28 @@ import type { Express, RequestHandler } from "express";
 import memoize from "memoizee";
 import connectPg from "connect-pg-simple";
 import { storage } from "./storage";
+import { getRequiredEnv } from "./envValidator";
 
-if (!process.env.REPLIT_DOMAINS) {
-  throw new Error("Environment variable REPLIT_DOMAINS not provided");
-}
+const REPLIT_DOMAINS = getRequiredEnv(
+  'REPLIT_DOMAINS',
+  'Comma-separated list of Replit domains for OIDC authentication'
+);
+
+const REPL_ID = getRequiredEnv(
+  'REPL_ID',
+  'Replit project ID for OIDC authentication'
+);
+
+const SESSION_SECRET = getRequiredEnv(
+  'SESSION_SECRET',
+  'Secret for session encryption (generate with: openssl rand -base64 32)'
+);
 
 const getOidcConfig = memoize(
   async () => {
     return await client.discovery(
       new URL(process.env.ISSUER_URL ?? "https://replit.com/oidc"),
-      process.env.REPL_ID!
+      REPL_ID
     );
   },
   { maxAge: 3600 * 1000 }
@@ -28,14 +40,18 @@ const getOidcConfig = memoize(
 export function getSession() {
   const sessionTtl = 7 * 24 * 60 * 60 * 1000; // 1 week
   const pgStore = connectPg(session);
+
+  // Get DATABASE_URL (already validated in db.ts, but we need it here too)
+  const DATABASE_URL = getRequiredEnv('DATABASE_URL', 'PostgreSQL connection string');
+
   const sessionStore = new pgStore({
-    conString: process.env.DATABASE_URL,
+    conString: DATABASE_URL,
     createTableIfMissing: false,
     ttl: sessionTtl,
     tableName: "sessions",
   });
   return session({
-    secret: process.env.SESSION_SECRET!,
+    secret: SESSION_SECRET,
     store: sessionStore,
     resave: false,
     saveUninitialized: false,
@@ -311,8 +327,7 @@ export async function setupAuth(app: Express) {
     verified(null, user);
   };
 
-  for (const domain of process.env
-    .REPLIT_DOMAINS!.split(",")) {
+  for (const domain of REPLIT_DOMAINS.split(",")) {
     const strategy = new Strategy(
       {
         name: `replitauth:${domain}`,
@@ -346,7 +361,7 @@ export async function setupAuth(app: Express) {
     req.logout(() => {
       res.redirect(
         client.buildEndSessionUrl(config, {
-          client_id: process.env.REPL_ID!,
+          client_id: REPL_ID,
           post_logout_redirect_uri: `${req.protocol}://${req.hostname}`,
         }).href
       );
