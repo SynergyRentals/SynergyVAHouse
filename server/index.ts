@@ -7,7 +7,7 @@ import { initializeSlackApp } from './slack/bolt';
 import { startScheduler } from './jobs/scheduler';
 import { log, setupVite } from './vite';
 import { storage } from './storage';
-import { printEnvironmentStatus, validateEnvironment } from './envValidator';
+import { validateEnvironmentOrThrow } from './envValidator';
 
 const app = express();
 
@@ -274,15 +274,8 @@ async function start() {
   try {
     console.log('\n🚀 Starting Synergy VA Ops Hub...\n');
 
-    // Validate environment variables first
-    printEnvironmentStatus();
-    const envValidation = validateEnvironment();
-
-    if (!envValidation.isValid) {
-      console.error('❌ Server cannot start due to missing environment variables.');
-      console.error('   Please configure the required variables and restart.\n');
-      process.exit(1);
-    }
+    // Validate environment variables first - will throw and stop server if invalid
+    validateEnvironmentOrThrow();
 
     // Initialize Slack app
     await initializeSlackApp(app);
