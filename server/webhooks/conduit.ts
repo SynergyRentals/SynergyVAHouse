@@ -41,6 +41,207 @@ function extractEventId(headers: any, body: any): string {
 }
 
 export async function setupConduitWebhooks(app: Express) {
+  /**
+   * @openapi
+   * /webhooks/conduit:
+   *   post:
+   *     tags:
+   *       - Webhooks
+   *     summary: Conduit webhook endpoint
+   *     description: |
+   *       Receives webhook events from Conduit for task creation and updates.
+   *
+   *       Supported event types:
+   *       - `escalation.created` - Creates a new reactive task with SLA timer (10 minutes)
+   *       - `task.created` - Creates a new reactive task from Conduit
+   *       - `task.updated` - Updates an existing task status
+   *       - `ai.help_requested` - Creates a task from AI help request (starts in WAITING status)
+   *
+   *       Security:
+   *       - HMAC-SHA256 signature verification via X-Conduit-Signature header
+   *       - Idempotency via event ID tracking (prevents duplicate processing)
+   *       - Event ID extraction: X-Event-ID header > body.id > body.event_id > SHA256 hash
+   *
+   *       Features:
+   *       - Automatic Definition of Done (DoD) schema population from playbooks
+   *       - SLA timer initialization for escalations
+   *       - Audit logging for all events
+   *       - Status mapping: resolved → DONE, in_progress → IN_PROGRESS
+   *     security:
+   *       - webhookSignature: []
+   *     parameters:
+   *       - in: header
+   *         name: X-Conduit-Signature
+   *         required: true
+   *         schema:
+   *           type: string
+   *           example: "sha256=a1b2c3d4e5f6..."
+   *         description: HMAC-SHA256 signature of the request body
+   *       - in: header
+   *         name: X-Event-ID
+   *         required: false
+   *         schema:
+   *           type: string
+   *         description: Optional unique event identifier for idempotency
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             properties:
+   *               type:
+   *                 type: string
+   *                 enum: [escalation.created, task.created, task.updated, ai.help_requested]
+   *                 description: Event type
+   *               id:
+   *                 type: string
+   *                 description: Event ID (used for idempotency if X-Event-ID not provided)
+   *               event_id:
+   *                 type: string
+   *                 description: Alternative event ID field
+   *               escalation:
+   *                 type: object
+   *                 description: Escalation data (for escalation.created events)
+   *                 properties:
+   *                   id:
+   *                     type: string
+   *                   url:
+   *                     type: string
+   *                     format: uri
+   *                   title:
+   *                     type: string
+   *                   description:
+   *                     type: string
+   *                   priority:
+   *                     type: integer
+   *                     minimum: 1
+   *                     maximum: 5
+   *               task:
+   *                 type: object
+   *                 description: Task data (for task.* events)
+   *                 properties:
+   *                   id:
+   *                     type: string
+   *                   title:
+   *                     type: string
+   *                   status:
+   *                     type: string
+   *                     enum: [open, in_progress, resolved]
+   *                   priority:
+   *                     type: integer
+   *               request:
+   *                 type: object
+   *                 description: AI help request data
+   *                 properties:
+   *                   id:
+   *                     type: string
+   *                   question:
+   *                     type: string
+   *           examples:
+   *             escalation_created:
+   *               summary: Escalation Created Event
+   *               value:
+   *                 type: "escalation.created"
+   *                 id: "esc_123456"
+   *                 escalation:
+   *                   id: "esc_123456"
+   *                   url: "https://app.conduit.com/escalations/123456"
+   *                   title: "Customer Issue: Payment Failed"
+   *                   description: "Customer unable to process payment"
+   *                   priority: 1
+   *                   category: "payment"
+   *             task_created:
+   *               summary: Task Created Event
+   *               value:
+   *                 type: "task.created"
+   *                 id: "task_789012"
+   *                 task:
+   *                   id: "task_789012"
+   *                   title: "Review customer feedback"
+   *                   status: "open"
+   *                   priority: 3
+   *             task_updated:
+   *               summary: Task Updated Event
+   *               value:
+   *                 type: "task.updated"
+   *                 id: "task_789012"
+   *                 task:
+   *                   id: "task_789012"
+   *                   status: "resolved"
+   *             ai_help_requested:
+   *               summary: AI Help Requested Event
+   *               value:
+   *                 type: "ai.help_requested"
+   *                 id: "req_345678"
+   *                 request:
+   *                   id: "req_345678"
+   *                   question: "How do I handle refund requests?"
+   *     responses:
+   *       200:
+   *         description: Webhook processed successfully
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 status:
+   *                   type: string
+   *                   enum: [processed, duplicate]
+   *                   description: Processing status
+   *                 taskId:
+   *                   type: string
+   *                   format: uuid
+   *                   description: ID of created/updated task (if applicable)
+   *                 eventId:
+   *                   type: string
+   *                   description: Event ID (only present for duplicate events)
+   *                 message:
+   *                   type: string
+   *                   description: Human-readable message (only for duplicates)
+   *                 processedAt:
+   *                   type: string
+   *                   format: date-time
+   *                   description: When event was originally processed (only for duplicates)
+   *             examples:
+   *               processed:
+   *                 summary: Successfully Processed
+   *                 value:
+   *                   status: "processed"
+   *                   taskId: "550e8400-e29b-41d4-a716-446655440000"
+   *               duplicate:
+   *                 summary: Duplicate Event
+   *                 value:
+   *                   status: "duplicate"
+   *                   message: "Event already processed"
+   *                   eventId: "esc_123456"
+   *                   processedAt: "2025-10-22T12:00:00Z"
+   *                   taskId: "550e8400-e29b-41d4-a716-446655440000"
+   *       400:
+   *         description: Invalid JSON payload
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/Error'
+   *             example:
+   *               error: "Invalid JSON payload"
+   *       401:
+   *         description: Invalid or missing HMAC signature
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/Error'
+   *             example:
+   *               error: "Invalid signature"
+   *       500:
+   *         description: Internal server error during processing
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/Error'
+   *             example:
+   *               error: "Processing failed"
+   */
   app.post('/webhooks/conduit', async (req, res) => {
     try {
       // Parse raw body for HMAC verification

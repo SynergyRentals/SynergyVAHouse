@@ -1,0 +1,1736 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "SynergyVAHouse API Documentation",
+    "version": "1.0.0",
+    "description": "# SynergyVAHouse API\n\nA comprehensive task management and workflow automation platform with webhook integrations, AI assistance, and RBAC.\n\n## Authentication\n\nThe API supports multiple authentication methods:\n\n### 1. JWT Bearer Tokens\n```\nAuthorization: Bearer <your_jwt_token>\n```\n\n### 2. API Keys\n```\nX-API-Key: <your_api_key>\n```\n\n### 3. Webhook Signatures\nFor webhook endpoints (Conduit and SuiteOp):\n```\nX-Conduit-Signature: sha256=<hmac_signature>\nX-SuiteOp-Signature: sha256=<hmac_signature>\n```\n\n### 4. Slack Signatures\nFor Slack events:\n```\nX-Slack-Signature: v0=<hmac_signature>\nX-Slack-Request-Timestamp: <unix_timestamp>\n```\n\n## Rate Limiting\n\nAPI endpoints are rate-limited to ensure fair usage. Please implement exponential backoff for retries.\n\n## Idempotency\n\nWebhook endpoints support idempotency through event IDs. Duplicate events with the same ID will return a 200 status with `status: 'duplicate'`.",
+    "contact": {
+      "name": "SynergyVAHouse Team"
+    },
+    "license": {
+      "name": "Private"
+    }
+  },
+  "servers": [
+    {
+      "url": "http://localhost:5000",
+      "description": "API Server"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "JWT token obtained from /api/auth/login"
+      },
+      "apiKeyAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-Key",
+        "description": "API key for service-to-service authentication"
+      },
+      "webhookSignature": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Conduit-Signature",
+        "description": "HMAC-SHA256 signature for webhook verification"
+      },
+      "slackSignature": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Slack-Signature",
+        "description": "Slack request signature verification"
+      }
+    },
+    "schemas": {
+      "User": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Unique user identifier"
+          },
+          "slackId": {
+            "type": "string",
+            "description": "Slack user ID"
+          },
+          "name": {
+            "type": "string",
+            "description": "Full name of the user"
+          },
+          "email": {
+            "type": "string",
+            "format": "email",
+            "description": "Email address"
+          },
+          "firstName": {
+            "type": "string",
+            "description": "First name"
+          },
+          "lastName": {
+            "type": "string",
+            "description": "Last name"
+          },
+          "role": {
+            "type": "string",
+            "description": "User role (legacy)"
+          },
+          "replitSub": {
+            "type": "string",
+            "description": "Replit subject identifier"
+          },
+          "profileImageUrl": {
+            "type": "string",
+            "format": "uri",
+            "description": "Profile image URL"
+          },
+          "timezone": {
+            "type": "string",
+            "default": "America/New_York",
+            "description": "User timezone"
+          },
+          "permissions": {
+            "type": "object",
+            "description": "RBAC permissions object"
+          },
+          "preferences": {
+            "type": "object",
+            "description": "User preferences"
+          },
+          "isActive": {
+            "type": "boolean",
+            "default": true,
+            "description": "Whether user is active"
+          },
+          "department": {
+            "type": "string",
+            "description": "Department name"
+          },
+          "managerId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Manager user ID"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "timezone"
+        ]
+      },
+      "Task": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Unique task identifier"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "daily",
+              "weekly",
+              "reactive",
+              "project",
+              "follow_up"
+            ],
+            "description": "Task type"
+          },
+          "title": {
+            "type": "string",
+            "description": "Task title"
+          },
+          "category": {
+            "type": "string",
+            "description": "Task category"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "OPEN",
+              "IN_PROGRESS",
+              "WAITING",
+              "BLOCKED",
+              "DONE"
+            ],
+            "description": "Current task status"
+          },
+          "priority": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5,
+            "description": "Task priority (1=highest, 5=lowest)"
+          },
+          "assigneeId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Assigned user ID"
+          },
+          "dueAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Due date/time"
+          },
+          "slaAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "SLA deadline"
+          },
+          "sourceKind": {
+            "type": "string",
+            "enum": [
+              "slack",
+              "conduit",
+              "suiteop",
+              "manual"
+            ],
+            "description": "Source of task creation"
+          },
+          "sourceId": {
+            "type": "string",
+            "description": "External source identifier"
+          },
+          "sourceUrl": {
+            "type": "string",
+            "format": "uri",
+            "description": "Link to external source"
+          },
+          "playbookKey": {
+            "type": "string",
+            "description": "Associated playbook key"
+          },
+          "dodSchema": {
+            "type": "object",
+            "description": "Definition of Done schema with required fields"
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "description": "Evidence type (screenshot, link, etc.)"
+                },
+                "url": {
+                  "type": "string",
+                  "format": "uri",
+                  "description": "Evidence URL"
+                },
+                "note": {
+                  "type": "string",
+                  "description": "Additional notes"
+                }
+              }
+            },
+            "description": "Task evidence attachments"
+          },
+          "followUpMetadata": {
+            "type": "object",
+            "description": "Follow-up task metadata"
+          },
+          "approvals": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "bySlackId": {
+                  "type": "string",
+                  "description": "Approver Slack ID"
+                },
+                "at": {
+                  "type": "string",
+                  "format": "date-time",
+                  "description": "Approval time"
+                },
+                "decision": {
+                  "type": "string",
+                  "enum": [
+                    "approve",
+                    "reject"
+                  ],
+                  "description": "Approval decision"
+                }
+              }
+            },
+            "description": "Task approvals"
+          },
+          "projectId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Associated project ID"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "title",
+          "category",
+          "status",
+          "priority"
+        ]
+      },
+      "Project": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string",
+            "description": "Project title"
+          },
+          "scope": {
+            "type": "string",
+            "description": "Project scope/description"
+          },
+          "ownerId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Project owner user ID"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "planning",
+              "active",
+              "on_hold",
+              "completed",
+              "cancelled"
+            ],
+            "description": "Project status"
+          },
+          "view": {
+            "type": "string",
+            "enum": [
+              "kanban",
+              "list",
+              "timeline"
+            ],
+            "default": "kanban",
+            "description": "Preferred view mode"
+          },
+          "startAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Start date"
+          },
+          "targetAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Target completion date"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "scope",
+          "status",
+          "view"
+        ]
+      },
+      "Playbook": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "description": "Unique playbook key"
+          },
+          "title": {
+            "type": "string",
+            "description": "Playbook title"
+          },
+          "category": {
+            "type": "string",
+            "description": "Category/type"
+          },
+          "dodSchema": {
+            "type": "object",
+            "description": "Definition of Done schema",
+            "properties": {
+              "fields": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "key": {
+                      "type": "string"
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "type": {
+                      "type": "string",
+                      "enum": [
+                        "text",
+                        "boolean",
+                        "url",
+                        "file"
+                      ]
+                    },
+                    "required": {
+                      "type": "boolean"
+                    },
+                    "placeholder": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "template": {
+            "type": "string",
+            "description": "Task template text"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "key",
+          "title",
+          "category"
+        ]
+      },
+      "WebhookEvent": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "eventId": {
+            "type": "string",
+            "description": "Unique event identifier for idempotency"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "conduit",
+              "suiteop"
+            ],
+            "description": "Webhook source"
+          },
+          "processedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "requestBody": {
+            "type": "object",
+            "description": "Original webhook payload"
+          },
+          "taskId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Created/updated task ID"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string",
+            "description": "Error message"
+          },
+          "details": {
+            "type": "object",
+            "description": "Additional error details"
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "AuthTokens": {
+        "type": "object",
+        "properties": {
+          "accessToken": {
+            "type": "string",
+            "description": "JWT access token (15min expiry)"
+          },
+          "refreshToken": {
+            "type": "string",
+            "description": "Refresh token (7d expiry)"
+          },
+          "user": {
+            "$ref": "#/components/schemas/User"
+          }
+        },
+        "required": [
+          "accessToken",
+          "refreshToken",
+          "user"
+        ]
+      },
+      "ApiKey": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "userId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string",
+            "description": "API key name/description"
+          },
+          "keyPrefix": {
+            "type": "string",
+            "description": "First 8 chars of the key"
+          },
+          "lastUsedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      }
+    },
+    "responses": {
+      "UnauthorizedError": {
+        "description": "Authentication required or invalid credentials",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": "Unauthorized"
+            }
+          }
+        }
+      },
+      "ForbiddenError": {
+        "description": "Insufficient permissions",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": "Forbidden: insufficient permissions"
+            }
+          }
+        }
+      },
+      "NotFoundError": {
+        "description": "Resource not found",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": "Resource not found"
+            }
+          }
+        }
+      },
+      "ValidationError": {
+        "description": "Validation error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": "Validation failed",
+              "details": {}
+            }
+          }
+        }
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "Webhooks",
+      "description": "External webhook integrations for Conduit and SuiteOp"
+    },
+    {
+      "name": "Authentication",
+      "description": "User authentication and authorization endpoints"
+    },
+    {
+      "name": "Tasks",
+      "description": "Task management operations"
+    },
+    {
+      "name": "Projects",
+      "description": "Project management operations"
+    },
+    {
+      "name": "Playbooks",
+      "description": "Playbook templates and definitions"
+    },
+    {
+      "name": "AI",
+      "description": "AI-powered suggestions and improvements"
+    },
+    {
+      "name": "Users",
+      "description": "User management operations"
+    },
+    {
+      "name": "RBAC",
+      "description": "Role-Based Access Control management"
+    },
+    {
+      "name": "Analytics",
+      "description": "Metrics and analytics endpoints"
+    },
+    {
+      "name": "Audit",
+      "description": "Audit log retrieval"
+    }
+  ],
+  "paths": {
+    "/webhooks/conduit": {
+      "post": {
+        "tags": [
+          "Webhooks"
+        ],
+        "summary": "Conduit webhook endpoint",
+        "description": "Receives webhook events from Conduit for task creation and updates.\n\nSupported event types:\n- `escalation.created` - Creates a new reactive task with SLA timer (10 minutes)\n- `task.created` - Creates a new reactive task from Conduit\n- `task.updated` - Updates an existing task status\n- `ai.help_requested` - Creates a task from AI help request (starts in WAITING status)\n\nSecurity:\n- HMAC-SHA256 signature verification via X-Conduit-Signature header\n- Idempotency via event ID tracking (prevents duplicate processing)\n- Event ID extraction: X-Event-ID header > body.id > body.event_id > SHA256 hash\n\nFeatures:\n- Automatic Definition of Done (DoD) schema population from playbooks\n- SLA timer initialization for escalations\n- Audit logging for all events\n- Status mapping: resolved → DONE, in_progress → IN_PROGRESS\n",
+        "security": [
+          {
+            "webhookSignature": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Conduit-Signature",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "sha256=a1b2c3d4e5f6..."
+            },
+            "description": "HMAC-SHA256 signature of the request body"
+          },
+          {
+            "in": "header",
+            "name": "X-Event-ID",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Optional unique event identifier for idempotency"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "escalation.created",
+                      "task.created",
+                      "task.updated",
+                      "ai.help_requested"
+                    ],
+                    "description": "Event type"
+                  },
+                  "id": {
+                    "type": "string",
+                    "description": "Event ID (used for idempotency if X-Event-ID not provided)"
+                  },
+                  "event_id": {
+                    "type": "string",
+                    "description": "Alternative event ID field"
+                  },
+                  "escalation": {
+                    "type": "object",
+                    "description": "Escalation data (for escalation.created events)",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "url": {
+                        "type": "string",
+                        "format": "uri"
+                      },
+                      "title": {
+                        "type": "string"
+                      },
+                      "description": {
+                        "type": "string"
+                      },
+                      "priority": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 5
+                      }
+                    }
+                  },
+                  "task": {
+                    "type": "object",
+                    "description": "Task data (for task.* events)",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "title": {
+                        "type": "string"
+                      },
+                      "status": {
+                        "type": "string",
+                        "enum": [
+                          "open",
+                          "in_progress",
+                          "resolved"
+                        ]
+                      },
+                      "priority": {
+                        "type": "integer"
+                      }
+                    }
+                  },
+                  "request": {
+                    "type": "object",
+                    "description": "AI help request data",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "question": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              },
+              "examples": {
+                "escalation_created": {
+                  "summary": "Escalation Created Event",
+                  "value": {
+                    "type": "escalation.created",
+                    "id": "esc_123456",
+                    "escalation": {
+                      "id": "esc_123456",
+                      "url": "https://app.conduit.com/escalations/123456",
+                      "title": "Customer Issue: Payment Failed",
+                      "description": "Customer unable to process payment",
+                      "priority": 1,
+                      "category": "payment"
+                    }
+                  }
+                },
+                "task_created": {
+                  "summary": "Task Created Event",
+                  "value": {
+                    "type": "task.created",
+                    "id": "task_789012",
+                    "task": {
+                      "id": "task_789012",
+                      "title": "Review customer feedback",
+                      "status": "open",
+                      "priority": 3
+                    }
+                  }
+                },
+                "task_updated": {
+                  "summary": "Task Updated Event",
+                  "value": {
+                    "type": "task.updated",
+                    "id": "task_789012",
+                    "task": {
+                      "id": "task_789012",
+                      "status": "resolved"
+                    }
+                  }
+                },
+                "ai_help_requested": {
+                  "summary": "AI Help Requested Event",
+                  "value": {
+                    "type": "ai.help_requested",
+                    "id": "req_345678",
+                    "request": {
+                      "id": "req_345678",
+                      "question": "How do I handle refund requests?"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Webhook processed successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "processed",
+                        "duplicate"
+                      ],
+                      "description": "Processing status"
+                    },
+                    "taskId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "ID of created/updated task (if applicable)"
+                    },
+                    "eventId": {
+                      "type": "string",
+                      "description": "Event ID (only present for duplicate events)"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable message (only for duplicates)"
+                    },
+                    "processedAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "When event was originally processed (only for duplicates)"
+                    }
+                  }
+                },
+                "examples": {
+                  "processed": {
+                    "summary": "Successfully Processed",
+                    "value": {
+                      "status": "processed",
+                      "taskId": "550e8400-e29b-41d4-a716-446655440000"
+                    }
+                  },
+                  "duplicate": {
+                    "summary": "Duplicate Event",
+                    "value": {
+                      "status": "duplicate",
+                      "message": "Event already processed",
+                      "eventId": "esc_123456",
+                      "processedAt": "2025-10-22T12:00:00Z",
+                      "taskId": "550e8400-e29b-41d4-a716-446655440000"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid JSON payload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "Invalid JSON payload"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or missing HMAC signature",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "Invalid signature"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error during processing",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "Processing failed"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/webhooks/suiteop": {
+      "post": {
+        "tags": [
+          "Webhooks"
+        ],
+        "summary": "SuiteOp webhook endpoint",
+        "description": "Receives webhook events from SuiteOp for task creation and updates.\n\nSupported event types:\n- `task.created` - Creates a new reactive task from SuiteOp\n- `task.updated` - Updates an existing task status\n\nSecurity:\n- HMAC-SHA256 signature verification via X-SuiteOp-Signature header\n- Idempotency via event ID tracking (prevents duplicate processing)\n- Event ID extraction: X-Event-ID header > body.id > body.event_id > SHA256 hash\n\nFeatures:\n- Automatic Definition of Done (DoD) schema population from playbooks\n- SLA timer initialization when playbook is available\n- Audit logging for all events\n- Status mapping: completed → DONE, in_progress → IN_PROGRESS, cancelled → BLOCKED\n",
+        "security": [
+          {
+            "webhookSignature": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-SuiteOp-Signature",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "sha256=a1b2c3d4e5f6..."
+            },
+            "description": "HMAC-SHA256 signature of the request body"
+          },
+          {
+            "in": "header",
+            "name": "X-Event-ID",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Optional unique event identifier for idempotency"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "task.created",
+                      "task.updated"
+                    ],
+                    "description": "Event type"
+                  },
+                  "id": {
+                    "type": "string",
+                    "description": "Event ID (used for idempotency if X-Event-ID not provided)"
+                  },
+                  "event_id": {
+                    "type": "string",
+                    "description": "Alternative event ID field"
+                  },
+                  "task": {
+                    "type": "object",
+                    "description": "Task data",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "description": "SuiteOp task ID"
+                      },
+                      "title": {
+                        "type": "string",
+                        "description": "Task title"
+                      },
+                      "description": {
+                        "type": "string",
+                        "description": "Task description"
+                      },
+                      "status": {
+                        "type": "string",
+                        "enum": [
+                          "pending",
+                          "in_progress",
+                          "completed",
+                          "cancelled"
+                        ],
+                        "description": "Task status"
+                      },
+                      "priority": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 5,
+                        "description": "Task priority (1=highest, 5=lowest)"
+                      },
+                      "url": {
+                        "type": "string",
+                        "format": "uri",
+                        "description": "Link to task in SuiteOp"
+                      },
+                      "category": {
+                        "type": "string",
+                        "description": "Task category/type"
+                      }
+                    }
+                  }
+                }
+              },
+              "examples": {
+                "task_created": {
+                  "summary": "Task Created Event",
+                  "value": {
+                    "type": "task.created",
+                    "id": "evt_123456789",
+                    "task": {
+                      "id": "task_987654321",
+                      "title": "Process refund request",
+                      "description": "Customer requested refund for order #12345",
+                      "status": "pending",
+                      "priority": 2,
+                      "category": "refund",
+                      "url": "https://app.suiteop.com/tasks/987654321"
+                    }
+                  }
+                },
+                "task_updated": {
+                  "summary": "Task Updated Event",
+                  "value": {
+                    "type": "task.updated",
+                    "id": "evt_123456790",
+                    "task": {
+                      "id": "task_987654321",
+                      "status": "completed"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Webhook processed successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "processed",
+                        "duplicate"
+                      ],
+                      "description": "Processing status"
+                    },
+                    "taskId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "ID of created/updated task (if applicable)"
+                    },
+                    "eventId": {
+                      "type": "string",
+                      "description": "Event ID (only present for duplicate events)"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable message (only for duplicates)"
+                    },
+                    "processedAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "When event was originally processed (only for duplicates)"
+                    }
+                  }
+                },
+                "examples": {
+                  "processed": {
+                    "summary": "Successfully Processed",
+                    "value": {
+                      "status": "processed",
+                      "taskId": "550e8400-e29b-41d4-a716-446655440000"
+                    }
+                  },
+                  "duplicate": {
+                    "summary": "Duplicate Event",
+                    "value": {
+                      "status": "duplicate",
+                      "message": "Event already processed",
+                      "eventId": "evt_123456789",
+                      "processedAt": "2025-10-22T12:00:00Z",
+                      "taskId": "550e8400-e29b-41d4-a716-446655440000"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid JSON payload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "Invalid JSON payload"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or missing HMAC signature",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "Invalid signature"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error during processing",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "Processing failed"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/login": {
+      "post": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "User login",
+        "description": "Authenticates a user with email and password credentials.\nReturns JWT access token (15min expiry) and refresh token (7d expiry).\n\nNote: Current implementation is simplified for demo purposes.\nIn production, password validation should be implemented.\n",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "email"
+                ],
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "format": "email",
+                    "description": "User email address",
+                    "example": "user@example.com"
+                  },
+                  "password": {
+                    "type": "string",
+                    "format": "password",
+                    "description": "User password",
+                    "example": "password123"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Login successful",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthTokens"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Email is required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "Email is required"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid credentials",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "Invalid credentials"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Account is disabled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "Account is disabled"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "Login failed"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/refresh": {
+      "post": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Refresh access token",
+        "description": "Exchanges a valid refresh token for a new access token and refresh token.\nImplements automatic token rotation for enhanced security.\nThe old refresh token is revoked after use.\n",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "refreshToken"
+                ],
+                "properties": {
+                  "refreshToken": {
+                    "type": "string",
+                    "description": "Valid refresh token",
+                    "example": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Token refreshed successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthTokens"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Refresh token is required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "Refresh token is required"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or expired refresh token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "Invalid or expired refresh token"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      }
+    },
+    "/api/auth/logout": {
+      "post": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Logout from current session",
+        "description": "Revokes the provided refresh token, logging out the user from the current session.\nThe user will remain logged in on other devices.\n",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "refreshToken": {
+                    "type": "string",
+                    "description": "Refresh token to revoke"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Logout successful",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "example": "Logged out successfully"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      }
+    },
+    "/api/auth/logout-all": {
+      "post": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Logout from all devices",
+        "description": "Revokes all refresh tokens for the authenticated user, logging them out from all devices.\nRequires authentication via Bearer token or API key.\n",
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Logged out from all devices",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "example": "Logged out from all devices"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "500": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      }
+    },
+    "/api/auth/slack/authorize": {
+      "get": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Initiate Slack OAuth flow",
+        "description": "Redirects to Slack OAuth authorization URL",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "state",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Optional state parameter for OAuth flow"
+          }
+        ],
+        "responses": {
+          "302": {
+            "description": "Redirect to Slack OAuth URL"
+          },
+          "500": {
+            "description": "Slack OAuth not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/slack/callback": {
+      "get": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Slack OAuth callback",
+        "description": "Handles the OAuth callback from Slack.\nExchanges authorization code for user info and creates/updates user account.\nRedirects to frontend with JWT tokens.\n",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Authorization code from Slack"
+          },
+          {
+            "in": "query",
+            "name": "state",
+            "schema": {
+              "type": "string"
+            },
+            "description": "State parameter from authorization request"
+          },
+          {
+            "in": "query",
+            "name": "error",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Error code if authorization failed"
+          }
+        ],
+        "responses": {
+          "302": {
+            "description": "Redirect to frontend with tokens"
+          },
+          "400": {
+            "description": "Authorization code is required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/user": {
+      "get": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Get current user",
+        "description": "Returns the currently authenticated user's information",
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "User information retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/User"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "authType": {
+                          "type": "string",
+                          "description": "Authentication method used",
+                          "enum": [
+                            "jwt",
+                            "apiKey",
+                            "replit",
+                            "slack",
+                            "dev"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "500": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      }
+    },
+    "/api/auth/api-keys": {
+      "post": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Create API key",
+        "description": "Creates a new API key for the authenticated user.\nThe full API key is returned only once - save it immediately!\n",
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "name"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "description": "Descriptive name for the API key",
+                    "example": "Production API Key"
+                  },
+                  "permissions": {
+                    "type": "object",
+                    "description": "Optional permissions scope for the API key"
+                  },
+                  "expiresInDays": {
+                    "type": "integer",
+                    "description": "Number of days until expiration (default 365)",
+                    "example": 90
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "API key created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ApiKey"
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "apiKey",
+                        "message"
+                      ],
+                      "properties": {
+                        "apiKey": {
+                          "type": "string",
+                          "description": "Full API key (shown only once)",
+                          "example": "svah_1234567890abcdef..."
+                        },
+                        "message": {
+                          "type": "string",
+                          "example": "Save this API key now. You won't be able to see it again!"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "API key name is required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "500": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "List API keys",
+        "description": "Returns all API keys for the authenticated user (without full key values)",
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "API keys retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "apiKeys": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ApiKey"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "500": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      }
+    },
+    "/api/auth/api-keys/{id}": {
+      "delete": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Revoke API key",
+        "description": "Permanently revokes an API key. The key will no longer be valid for authentication.",
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "API key ID to revoke"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "API key revoked successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "example": "API key revoked successfully"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      }
+    }
+  }
+}

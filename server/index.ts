@@ -8,6 +8,7 @@ import { startScheduler } from './jobs/scheduler';
 import { log, setupVite, serveStatic } from './vite';
 import { storage } from './storage';
 import { validateEnvironmentOrThrow } from './envValidator';
+import { setupSwagger } from './swagger';
 
 const app = express();
 
@@ -280,6 +281,9 @@ async function start() {
 
     // Initialize Slack app
     await initializeSlackApp(app);
+
+    // Setup Swagger API documentation
+    setupSwagger(app);
 
     // Register API routes (includes auth middleware)
     await registerRoutes(app);

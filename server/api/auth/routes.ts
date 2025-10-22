@@ -35,9 +35,76 @@ import {
 const router = Router();
 
 /**
- * POST /api/auth/login
- * Login with email/password (for now, we'll use email + auto-create if not exists)
- * In production, you'd validate credentials here
+ * @openapi
+ * /api/auth/login:
+ *   post:
+ *     tags:
+ *       - Authentication
+ *     summary: User login
+ *     description: |
+ *       Authenticates a user with email and password credentials.
+ *       Returns JWT access token (15min expiry) and refresh token (7d expiry).
+ *
+ *       Note: Current implementation is simplified for demo purposes.
+ *       In production, password validation should be implemented.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 description: User email address
+ *                 example: "user@example.com"
+ *               password:
+ *                 type: string
+ *                 format: password
+ *                 description: User password
+ *                 example: "password123"
+ *     responses:
+ *       200:
+ *         description: Login successful
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/AuthTokens'
+ *       400:
+ *         description: Email is required
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *             example:
+ *               error: "Email is required"
+ *       401:
+ *         description: Invalid credentials
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *             example:
+ *               error: "Invalid credentials"
+ *       403:
+ *         description: Account is disabled
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *             example:
+ *               error: "Account is disabled"
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *             example:
+ *               error: "Login failed"
  */
 router.post('/login', async (req: Request, res: Response) => {
   try {
@@ -95,8 +162,54 @@ router.post('/login', async (req: Request, res: Response) => {
 });
 
 /**
- * POST /api/auth/refresh
- * Refresh access token using refresh token
+ * @openapi
+ * /api/auth/refresh:
+ *   post:
+ *     tags:
+ *       - Authentication
+ *     summary: Refresh access token
+ *     description: |
+ *       Exchanges a valid refresh token for a new access token and refresh token.
+ *       Implements automatic token rotation for enhanced security.
+ *       The old refresh token is revoked after use.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - refreshToken
+ *             properties:
+ *               refreshToken:
+ *                 type: string
+ *                 description: Valid refresh token
+ *                 example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+ *     responses:
+ *       200:
+ *         description: Token refreshed successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/AuthTokens'
+ *       400:
+ *         description: Refresh token is required
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *             example:
+ *               error: "Refresh token is required"
+ *       401:
+ *         description: Invalid or expired refresh token
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *             example:
+ *               error: "Invalid or expired refresh token"
+ *       500:
+ *         $ref: '#/components/responses/ValidationError'
  */
 router.post('/refresh', async (req: Request, res: Response) => {
   try {
@@ -141,8 +254,38 @@ router.post('/refresh', async (req: Request, res: Response) => {
 });
 
 /**
- * POST /api/auth/logout
- * Logout (revoke current refresh token)
+ * @openapi
+ * /api/auth/logout:
+ *   post:
+ *     tags:
+ *       - Authentication
+ *     summary: Logout from current session
+ *     description: |
+ *       Revokes the provided refresh token, logging out the user from the current session.
+ *       The user will remain logged in on other devices.
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               refreshToken:
+ *                 type: string
+ *                 description: Refresh token to revoke
+ *     responses:
+ *       200:
+ *         description: Logout successful
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: "Logged out successfully"
+ *       500:
+ *         $ref: '#/components/responses/ValidationError'
  */
 router.post('/logout', async (req: Request, res: Response) => {
   try {
@@ -160,8 +303,33 @@ router.post('/logout', async (req: Request, res: Response) => {
 });
 
 /**
- * POST /api/auth/logout-all
- * Logout from all devices (revoke all refresh tokens)
+ * @openapi
+ * /api/auth/logout-all:
+ *   post:
+ *     tags:
+ *       - Authentication
+ *     summary: Logout from all devices
+ *     description: |
+ *       Revokes all refresh tokens for the authenticated user, logging them out from all devices.
+ *       Requires authentication via Bearer token or API key.
+ *     security:
+ *       - bearerAuth: []
+ *       - apiKeyAuth: []
+ *     responses:
+ *       200:
+ *         description: Logged out from all devices
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: "Logged out from all devices"
+ *       401:
+ *         $ref: '#/components/responses/UnauthorizedError'
+ *       500:
+ *         $ref: '#/components/responses/ValidationError'
  */
 router.post('/logout-all', requireAuth, async (req: Request, res: Response) => {
   try {
@@ -180,8 +348,28 @@ router.post('/logout-all', requireAuth, async (req: Request, res: Response) => {
 });
 
 /**
- * GET /api/auth/slack/authorize
- * Initiate Slack OAuth flow
+ * @openapi
+ * /api/auth/slack/authorize:
+ *   get:
+ *     tags:
+ *       - Authentication
+ *     summary: Initiate Slack OAuth flow
+ *     description: Redirects to Slack OAuth authorization URL
+ *     parameters:
+ *       - in: query
+ *         name: state
+ *         schema:
+ *           type: string
+ *         description: Optional state parameter for OAuth flow
+ *     responses:
+ *       302:
+ *         description: Redirect to Slack OAuth URL
+ *       500:
+ *         description: Slack OAuth not configured
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.get('/slack/authorize', (req: Request, res: Response) => {
   try {
@@ -197,8 +385,42 @@ router.get('/slack/authorize', (req: Request, res: Response) => {
 });
 
 /**
- * GET /api/auth/slack/callback
- * Slack OAuth callback
+ * @openapi
+ * /api/auth/slack/callback:
+ *   get:
+ *     tags:
+ *       - Authentication
+ *     summary: Slack OAuth callback
+ *     description: |
+ *       Handles the OAuth callback from Slack.
+ *       Exchanges authorization code for user info and creates/updates user account.
+ *       Redirects to frontend with JWT tokens.
+ *     parameters:
+ *       - in: query
+ *         name: code
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Authorization code from Slack
+ *       - in: query
+ *         name: state
+ *         schema:
+ *           type: string
+ *         description: State parameter from authorization request
+ *       - in: query
+ *         name: error
+ *         schema:
+ *           type: string
+ *         description: Error code if authorization failed
+ *     responses:
+ *       302:
+ *         description: Redirect to frontend with tokens
+ *       400:
+ *         description: Authorization code is required
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.get('/slack/callback', async (req: Request, res: Response) => {
   try {
@@ -246,8 +468,34 @@ router.get('/slack/callback', async (req: Request, res: Response) => {
 });
 
 /**
- * GET /api/auth/user
- * Get current authenticated user
+ * @openapi
+ * /api/auth/user:
+ *   get:
+ *     tags:
+ *       - Authentication
+ *     summary: Get current user
+ *     description: Returns the currently authenticated user's information
+ *     security:
+ *       - bearerAuth: []
+ *       - apiKeyAuth: []
+ *     responses:
+ *       200:
+ *         description: User information retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/User'
+ *                 - type: object
+ *                   properties:
+ *                     authType:
+ *                       type: string
+ *                       description: Authentication method used
+ *                       enum: [jwt, apiKey, replit, slack, dev]
+ *       401:
+ *         $ref: '#/components/responses/UnauthorizedError'
+ *       500:
+ *         $ref: '#/components/responses/ValidationError'
  */
 router.get('/user', requireAuth, async (req: Request, res: Response) => {
   try {
@@ -277,8 +525,68 @@ router.get('/user', requireAuth, async (req: Request, res: Response) => {
 });
 
 /**
- * POST /api/auth/api-keys
- * Create new API key
+ * @openapi
+ * /api/auth/api-keys:
+ *   post:
+ *     tags:
+ *       - Authentication
+ *     summary: Create API key
+ *     description: |
+ *       Creates a new API key for the authenticated user.
+ *       The full API key is returned only once - save it immediately!
+ *     security:
+ *       - bearerAuth: []
+ *       - apiKeyAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - name
+ *             properties:
+ *               name:
+ *                 type: string
+ *                 description: Descriptive name for the API key
+ *                 example: "Production API Key"
+ *               permissions:
+ *                 type: object
+ *                 description: Optional permissions scope for the API key
+ *               expiresInDays:
+ *                 type: integer
+ *                 description: Number of days until expiration (default 365)
+ *                 example: 90
+ *     responses:
+ *       200:
+ *         description: API key created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/ApiKey'
+ *                 - type: object
+ *                   required:
+ *                     - apiKey
+ *                     - message
+ *                   properties:
+ *                     apiKey:
+ *                       type: string
+ *                       description: Full API key (shown only once)
+ *                       example: "svah_1234567890abcdef..."
+ *                     message:
+ *                       type: string
+ *                       example: "Save this API key now. You won't be able to see it again!"
+ *       400:
+ *         description: API key name is required
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       401:
+ *         $ref: '#/components/responses/UnauthorizedError'
+ *       500:
+ *         $ref: '#/components/responses/ValidationError'
  */
 router.post('/api-keys', requireAuth, async (req: Request, res: Response) => {
   try {
@@ -319,8 +627,32 @@ router.post('/api-keys', requireAuth, async (req: Request, res: Response) => {
 });
 
 /**
- * GET /api/auth/api-keys
- * List user's API keys
+ * @openapi
+ * /api/auth/api-keys:
+ *   get:
+ *     tags:
+ *       - Authentication
+ *     summary: List API keys
+ *     description: Returns all API keys for the authenticated user (without full key values)
+ *     security:
+ *       - bearerAuth: []
+ *       - apiKeyAuth: []
+ *     responses:
+ *       200:
+ *         description: API keys retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 apiKeys:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/ApiKey'
+ *       401:
+ *         $ref: '#/components/responses/UnauthorizedError'
+ *       500:
+ *         $ref: '#/components/responses/ValidationError'
  */
 router.get('/api-keys', requireAuth, async (req: Request, res: Response) => {
   try {
@@ -339,8 +671,41 @@ router.get('/api-keys', requireAuth, async (req: Request, res: Response) => {
 });
 
 /**
- * DELETE /api/auth/api-keys/:id
- * Revoke API key
+ * @openapi
+ * /api/auth/api-keys/{id}:
+ *   delete:
+ *     tags:
+ *       - Authentication
+ *     summary: Revoke API key
+ *     description: Permanently revokes an API key. The key will no longer be valid for authentication.
+ *     security:
+ *       - bearerAuth: []
+ *       - apiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: API key ID to revoke
+ *     responses:
+ *       200:
+ *         description: API key revoked successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: "API key revoked successfully"
+ *       401:
+ *         $ref: '#/components/responses/UnauthorizedError'
+ *       404:
+ *         $ref: '#/components/responses/NotFoundError'
+ *       500:
+ *         $ref: '#/components/responses/ValidationError'
  */
 router.delete('/api-keys/:id', requireAuth, async (req: Request, res: Response) => {
   try {
