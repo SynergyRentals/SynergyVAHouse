@@ -5,9 +5,11 @@ import { WebSocketServer } from 'ws';
 import { registerRoutes } from './routes';
 import { initializeSlackApp } from './slack/bolt';
 import { startScheduler } from './jobs/scheduler';
-import { log, setupVite, serveStatic } from './vite';
+import { log as viteLog, setupVite, serveStatic } from './vite';
 import { storage } from './storage';
 import { validateEnvironmentOrThrow } from './envValidator';
+import log from './logger';
+import { correlationIdMiddleware, getCorrelationId } from './middleware/correlationId';
 
 const app = express();
 
@@ -87,13 +89,26 @@ app.use((req, res, next) => {
   next();
 });
 
-// Custom logging middleware
+// Correlation ID middleware - track requests across the system
+app.use(correlationIdMiddleware);
+
+// Request logging middleware
 app.use((req, res, next) => {
   const start = Date.now();
   res.on('finish', () => {
     const duration = Date.now() - start;
     if (req.url.startsWith('/api') || req.url.startsWith('/slack') || req.url.startsWith('/webhooks')) {
-      log(`${req.method} ${req.url} ${res.statusCode} in ${duration}ms`);
+      log.request(req.method, req.url, res.statusCode, {
+        correlationId: getCorrelationId(req),
+        duration,
+      });
+
+      // Log slow requests
+      if (duration > 1000) {
+        log.performance(`${req.method} ${req.url}`, duration, {
+          correlationId: getCorrelationId(req),
+        });
+      }
     }
   });
   next();
@@ -109,13 +124,13 @@ async function setupWebSocketServer(server: any) {
         // Parse session from cookies for authentication
         const cookieHeader = info.req.headers.cookie;
         if (!cookieHeader) {
-          console.log('[WebSocket] No cookies found, rejecting connection');
+          log.debug('WebSocket: No cookies found, rejecting connection');
           return false;
         }
 
         // In development, allow connections for testing
         if (process.env.NODE_ENV === 'development') {
-          console.log('[WebSocket] Development mode - allowing connection');
+          log.debug('WebSocket: Development mode - allowing connection');
           return true;
         }
 
@@ -123,7 +138,7 @@ async function setupWebSocketServer(server: any) {
         // For now, allow connection - we'll verify user later
         return true;
       } catch (error) {
-        console.error('[WebSocket] Authentication error:', error);
+        log.error('WebSocket: Authentication error', { error });
         return false;
       }
     }
@@ -134,8 +149,8 @@ async function setupWebSocketServer(server: any) {
 
   wss.on('connection', async (ws, req) => {
     const clientId = Math.random().toString(36).substr(2, 9);
-    console.log(`[WebSocket] Client connected: ${clientId}`);
-    
+    log.info('WebSocket: Client connected', { clientId });
+
     clients.add(ws);
     
     // Store client info
@@ -148,23 +163,23 @@ async function setupWebSocketServer(server: any) {
         const message = JSON.parse(data.toString());
         await handleWebSocketMessage(ws, message, clientId);
       } catch (error) {
-        console.error(`[WebSocket] Message parsing error for client ${clientId}:`, error);
-        ws.send(JSON.stringify({ 
-          type: 'error', 
-          message: 'Invalid message format' 
+        log.error('WebSocket: Message parsing error', { clientId, error });
+        ws.send(JSON.stringify({
+          type: 'error',
+          message: 'Invalid message format'
         }));
       }
     });
 
     // Handle client disconnect
     ws.on('close', (code, reason) => {
-      console.log(`[WebSocket] Client disconnected: ${clientId}, code: ${code}, reason: ${reason}`);
+      log.info('WebSocket: Client disconnected', { clientId, code, reason: reason.toString() });
       clients.delete(ws);
     });
 
     // Handle errors
     ws.on('error', (error) => {
-      console.error(`[WebSocket] Client error for ${clientId}:`, error);
+      log.error('WebSocket: Client error', { clientId, error });
       clients.delete(ws);
     });
 
@@ -185,11 +200,11 @@ async function setupWebSocketServer(server: any) {
   const heartbeat = setInterval(() => {
     wss.clients.forEach((ws: any) => {
       if (ws.isAlive === false) {
-        console.log(`[WebSocket] Terminating dead connection: ${ws.clientId}`);
+        log.debug('WebSocket: Terminating dead connection', { clientId: ws.clientId });
         clients.delete(ws);
         return ws.terminate();
       }
-      
+
       ws.isAlive = false;
       ws.ping();
     });
@@ -212,18 +227,18 @@ async function setupWebSocketServer(server: any) {
           ws.send(messageStr);
           successCount++;
         } catch (error) {
-          console.error(`[WebSocket] Broadcast error to client ${ws.clientId}:`, error);
+          log.error('WebSocket: Broadcast error', { clientId: ws.clientId, error });
           errorCount++;
         }
       }
     });
 
     if (successCount > 0 || errorCount > 0) {
-      console.log(`[WebSocket] Broadcast sent to ${successCount} clients, ${errorCount} errors`);
+      log.debug('WebSocket: Broadcast sent', { successCount, errorCount });
     }
   };
 
-  log(`WebSocket server initialized on /ws path`);
+  log.info('WebSocket server initialized on /ws path');
 }
 
 // Handle individual WebSocket messages
@@ -240,10 +255,10 @@ async function handleWebSocketMessage(ws: any, message: any, clientId: string) {
 
       case 'subscribe':
         // Handle subscription to specific channels/topics
-        console.log(`[WebSocket] Client ${clientId} subscribed to: ${message.channel}`);
-        ws.send(JSON.stringify({ 
-          type: 'subscribed', 
-          channel: message.channel 
+        log.debug('WebSocket: Client subscribed', { clientId, channel: message.channel });
+        ws.send(JSON.stringify({
+          type: 'subscribed',
+          channel: message.channel
         }));
         break;
 
@@ -256,24 +271,24 @@ async function handleWebSocketMessage(ws: any, message: any, clientId: string) {
         break;
 
       default:
-        console.log(`[WebSocket] Unknown message type from client ${clientId}:`, message.type);
-        ws.send(JSON.stringify({ 
-          type: 'error', 
-          message: `Unknown message type: ${message.type}` 
+        log.debug('WebSocket: Unknown message type', { clientId, messageType: message.type });
+        ws.send(JSON.stringify({
+          type: 'error',
+          message: `Unknown message type: ${message.type}`
         }));
     }
   } catch (error) {
-    console.error(`[WebSocket] Message handler error for client ${clientId}:`, error);
-    ws.send(JSON.stringify({ 
-      type: 'error', 
-      message: 'Internal server error' 
+    log.error('WebSocket: Message handler error', { clientId, error });
+    ws.send(JSON.stringify({
+      type: 'error',
+      message: 'Internal server error'
     }));
   }
 }
 
 async function start() {
   try {
-    console.log('\n🚀 Starting Synergy VA Ops Hub...\n');
+    log.info('Starting Synergy VA Ops Hub...');
 
     // Validate environment variables first - will throw and stop server if invalid
     validateEnvironmentOrThrow();
@@ -305,29 +320,19 @@ async function start() {
     // Start server
     const port = parseInt(process.env.PORT || '5000', 10);
     server.listen(port, '0.0.0.0', () => {
-      console.log('\n' + '='.repeat(60));
-      console.log(`✅ Synergy VA Ops Hub is running on port ${port}`);
-      console.log('='.repeat(60) + '\n');
+      log.info('Synergy VA Ops Hub is running', { port });
     });
   } catch (error: any) {
-    console.error('\n' + '='.repeat(60));
-    console.error('❌ FATAL ERROR: Server failed to start');
-    console.error('='.repeat(60));
-    console.error('\nError details:');
-    console.error(error);
+    log.error('FATAL ERROR: Server failed to start', { error });
 
     if (error.message?.includes('environment variable')) {
-      console.error('\n💡 This appears to be a configuration issue.');
-      console.error('   Please check the environment configuration above.\n');
+      log.error('Configuration issue detected - please check environment variables');
     } else if (error.message?.includes('EADDRINUSE')) {
-      console.error('\n💡 Port is already in use.');
-      console.error('   Try stopping other services or changing the PORT.\n');
+      log.error('Port is already in use - try stopping other services or changing the PORT');
     } else if (error.message?.includes('database') || error.message?.includes('connection')) {
-      console.error('\n💡 Database connection failed.');
-      console.error('   Please verify DATABASE_URL is correct and database is accessible.\n');
+      log.error('Database connection failed - verify DATABASE_URL and database accessibility');
     }
 
-    console.error('='.repeat(60) + '\n');
     process.exit(1);
   }
 }

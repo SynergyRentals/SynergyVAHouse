@@ -6,6 +6,8 @@ import crypto from 'crypto';
 import { db } from '../db';
 import { webhookEvents } from '../../shared/schema';
 import { eq, and } from 'drizzle-orm';
+import log from '../logger';
+import { getCorrelationId } from '../middleware/correlationId';
 
 /**
  * Generates a deterministic event ID from webhook body if not provided
@@ -42,51 +44,57 @@ function extractEventId(headers: any, body: any): string {
 
 export async function setupConduitWebhooks(app: Express) {
   app.post('/webhooks/conduit', async (req, res) => {
+    const correlationId = getCorrelationId(req);
     try {
       // Parse raw body for HMAC verification
       const rawBody = req.body as Buffer;
       const bodyString = rawBody.toString('utf8');
-      
+
       // Verify HMAC signature
       const signature = req.headers['x-conduit-signature'] as string;
       const secret = process.env.WEBHOOK_CONDUIT_SECRET;
-      
+
       if (secret && signature) {
         const expectedSignature = crypto
           .createHmac('sha256', secret)
           .update(bodyString)
           .digest('hex');
-        
+
         const providedSignature = signature.startsWith('sha256=') ? signature.slice(7) : signature;
-        
+
         if (providedSignature !== expectedSignature) {
-          console.error('HMAC verification failed for Conduit webhook');
+          log.error('Conduit webhook: HMAC verification failed', { correlationId });
           res.status(401).json({ error: 'Invalid signature' });
           return;
         }
-        
-        console.log('Conduit webhook HMAC verified successfully');
+
+        log.debug('Conduit webhook: HMAC verified successfully', { correlationId });
       } else if (secret) {
-        console.warn('Conduit webhook received without signature, but secret is configured');
+        log.warn('Conduit webhook: Received without signature, but secret is configured', { correlationId });
       }
-      
+
       // Parse JSON payload
       let payload: any;
       try {
         payload = JSON.parse(bodyString);
       } catch (error) {
-        console.error('Invalid JSON in Conduit webhook:', error);
+        log.error('Conduit webhook: Invalid JSON payload', { correlationId, error });
         res.status(400).json({ error: 'Invalid JSON payload' });
         return;
       }
 
-      console.log('Conduit webhook received:', payload.type, 'ID:', payload.id || payload.escalation?.id);
+      log.webhook('received', {
+        correlationId,
+        webhookId: payload.id || payload.escalation?.id,
+        type: payload.type,
+        source: 'conduit'
+      });
 
       // Idempotency check
       const eventId = extractEventId(req.headers, payload);
       const source = 'conduit';
 
-      console.log(`[Idempotency Check] source=${source} eventId=${eventId}`);
+      log.debug('Conduit webhook: Idempotency check', { correlationId, eventId, source });
 
       try {
         // Check if this event has already been processed
@@ -98,7 +106,13 @@ export async function setupConduitWebhooks(app: Express) {
         });
 
         if (existingEvent) {
-          console.log(`[Idempotency] Duplicate webhook blocked: ${eventId} from ${source}`);
+          log.info('Conduit webhook: Duplicate event blocked', {
+            correlationId,
+            eventId,
+            source,
+            taskId: existingEvent.taskId,
+            processedAt: existingEvent.processedAt
+          });
 
           // Return success (200) to prevent retries, but indicate it's a duplicate
           res.status(200).json({
@@ -111,7 +125,7 @@ export async function setupConduitWebhooks(app: Express) {
           return;
         }
       } catch (idempotencyError) {
-        console.error(`[Idempotency Error] Failed to check idempotency:`, idempotencyError);
+        log.error('Conduit webhook: Idempotency check failed', { correlationId, eventId, error: idempotencyError });
         // On error, fail open (allow processing) to prevent blocking legitimate webhooks
       }
       
@@ -119,19 +133,19 @@ export async function setupConduitWebhooks(app: Express) {
       let taskId: string | undefined;
       switch (payload.type) {
         case 'escalation.created':
-          taskId = await handleEscalationCreated(payload);
+          taskId = await handleEscalationCreated(payload, correlationId);
           break;
         case 'task.created':
-          taskId = await handleTaskCreated(payload);
+          taskId = await handleTaskCreated(payload, correlationId);
           break;
         case 'task.updated':
-          taskId = await handleTaskUpdated(payload);
+          taskId = await handleTaskUpdated(payload, correlationId);
           break;
         case 'ai.help_requested':
-          taskId = await handleAIHelpRequested(payload);
+          taskId = await handleAIHelpRequested(payload, correlationId);
           break;
         default:
-          console.log('Unknown Conduit event type:', payload.type);
+          log.warn('Conduit webhook: Unknown event type', { correlationId, eventType: payload.type });
       }
 
       // Record webhook event for idempotency
@@ -142,43 +156,43 @@ export async function setupConduitWebhooks(app: Express) {
           requestBody: payload,
           taskId: taskId || null
         });
-        console.log(`[Idempotency] Recorded webhook event: ${eventId}`);
+        log.debug('Conduit webhook: Recorded event for idempotency', { correlationId, eventId, taskId });
       } catch (recordError) {
-        console.error(`[Idempotency Error] Failed to record webhook event:`, recordError);
+        log.error('Conduit webhook: Failed to record event', { correlationId, eventId, error: recordError });
         // Don't fail the webhook - recording failure shouldn't break processing
       }
 
       res.json({ status: 'processed', taskId });
     } catch (error) {
-      console.error('Error processing Conduit webhook:', error);
-      
+      log.error('Conduit webhook: Processing failed', { correlationId, error });
+
       // Create audit entry for failed webhook
       try {
         await storage.createAudit({
           entity: 'webhook',
           entityId: 'conduit',
           action: 'processing_failed',
-          data: { 
+          data: {
             error: error instanceof Error ? error.message : 'Unknown error',
             headers: req.headers,
             url: req.url
           }
         });
       } catch (auditError) {
-        console.error('Failed to create audit entry for webhook error:', auditError);
+        log.error('Conduit webhook: Failed to create audit entry', { correlationId, error: auditError });
       }
-      
+
       res.status(500).json({ error: 'Processing failed' });
     }
   });
 }
 
-async function handleEscalationCreated(payload: any): Promise<string | undefined> {
+async function handleEscalationCreated(payload: any, correlationId: string): Promise<string | undefined> {
   try {
     const taskData = await mapConduitEventToTask(payload);
 
     if (!taskData) {
-      console.log('Could not map Conduit escalation to task');
+      log.warn('Conduit webhook: Could not map escalation to task', { correlationId });
       return undefined;
     }
 
@@ -200,7 +214,10 @@ async function handleEscalationCreated(payload: any): Promise<string | undefined
 
       if (playbookContent.definition_of_done) {
         finalTaskData.dodSchema = playbookContent.definition_of_done;
-        console.log(`[Webhook DoD] Populated DoD schema for Conduit escalation:`, finalTaskData.dodSchema);
+        log.debug('Conduit webhook: Populated DoD schema for escalation', {
+          correlationId,
+          dodSchema: finalTaskData.dodSchema
+        });
       }
     }
 
@@ -218,15 +235,19 @@ async function handleEscalationCreated(payload: any): Promise<string | undefined
       data: { conduitPayload: payload }
     });
 
-    console.log(`Created task ${task.id} from Conduit escalation`);
+    log.info('Conduit webhook: Created task from escalation', {
+      correlationId,
+      taskId: task.id,
+      sourceId: finalTaskData.sourceId
+    });
     return task.id;
   } catch (error) {
-    console.error('Error handling Conduit escalation:', error);
+    log.error('Conduit webhook: Error handling escalation', { correlationId, error });
     return undefined;
   }
 }
 
-async function handleTaskCreated(payload: any): Promise<string | undefined> {
+async function handleTaskCreated(payload: any, correlationId: string): Promise<string | undefined> {
   try {
     const taskData = await mapConduitEventToTask(payload);
 
@@ -249,27 +270,34 @@ async function handleTaskCreated(payload: any): Promise<string | undefined> {
 
       if (playbookContent.definition_of_done) {
         finalTaskData.dodSchema = playbookContent.definition_of_done;
-        console.log(`[Webhook DoD] Populated DoD schema for Conduit task:`, finalTaskData.dodSchema);
+        log.debug('Conduit webhook: Populated DoD schema for task', {
+          correlationId,
+          dodSchema: finalTaskData.dodSchema
+        });
       }
     }
 
     const task = await storage.createTask(finalTaskData);
 
-    console.log(`Created task ${task.id} from Conduit task.created`);
+    log.info('Conduit webhook: Created task from task.created event', {
+      correlationId,
+      taskId: task.id,
+      sourceId: finalTaskData.sourceId
+    });
     return task.id;
   } catch (error) {
-    console.error('Error handling Conduit task.created:', error);
+    log.error('Conduit webhook: Error handling task.created', { correlationId, error });
     return undefined;
   }
 }
 
-async function handleTaskUpdated(payload: any): Promise<string | undefined> {
+async function handleTaskUpdated(payload: any, correlationId: string): Promise<string | undefined> {
   try {
     const sourceId = payload.task?.id || payload.id;
     const tasks = await storage.getTasks({ sourceId });
 
     if (tasks.length === 0) {
-      console.log('No matching task found for Conduit update');
+      log.warn('Conduit webhook: No matching task found for update', { correlationId, sourceId });
       return undefined;
     }
 
@@ -292,17 +320,23 @@ async function handleTaskUpdated(payload: any): Promise<string | undefined> {
         action: 'updated_from_conduit',
         data: { conduitPayload: payload, updates }
       });
+
+      log.info('Conduit webhook: Updated task from task.updated event', {
+        correlationId,
+        taskId: task.id,
+        sourceId,
+        updates
+      });
     }
 
-    console.log(`Updated task ${task.id} from Conduit`);
     return task.id;
   } catch (error) {
-    console.error('Error handling Conduit task.updated:', error);
+    log.error('Conduit webhook: Error handling task.updated', { correlationId, error });
     return undefined;
   }
 }
 
-async function handleAIHelpRequested(payload: any): Promise<string | undefined> {
+async function handleAIHelpRequested(payload: any, correlationId: string): Promise<string | undefined> {
   try {
     const taskData = await mapConduitEventToTask(payload);
 
@@ -325,7 +359,10 @@ async function handleAIHelpRequested(payload: any): Promise<string | undefined> 
 
       if (playbookContent.definition_of_done) {
         finalTaskData.dodSchema = playbookContent.definition_of_done;
-        console.log(`[Webhook DoD] Populated DoD schema for Conduit AI help:`, finalTaskData.dodSchema);
+        log.debug('Conduit webhook: Populated DoD schema for AI help request', {
+          correlationId,
+          dodSchema: finalTaskData.dodSchema
+        });
       }
     }
 
@@ -338,10 +375,14 @@ async function handleAIHelpRequested(payload: any): Promise<string | undefined> 
       data: { conduitPayload: payload }
     });
 
-    console.log(`Created AI help task ${task.id} from Conduit`);
+    log.info('Conduit webhook: Created AI help task', {
+      correlationId,
+      taskId: task.id,
+      sourceId: finalTaskData.sourceId
+    });
     return task.id;
   } catch (error) {
-    console.error('Error handling Conduit AI help request:', error);
+    log.error('Conduit webhook: Error handling AI help request', { correlationId, error });
     return undefined;
   }
 }
