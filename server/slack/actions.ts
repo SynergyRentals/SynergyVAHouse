@@ -451,12 +451,14 @@ export function setupActions(app: App) {
       
       // Complete the follow-up
       await satisfyFollowUp(taskId, 'Marked complete via Slack');
-      
+
       // Send confirmation to user
-      await client.chat.postMessage({
-        channel: user.slackId,
-        text: `✅ Follow-up completed: "${task.title}"\n\nTask marked as done!`
-      });
+      if (user.slackId) {
+        await client.chat.postMessage({
+          channel: user.slackId,
+          text: `✅ Follow-up completed: "${task.title}"\n\nTask marked as done!`
+        });
+      }
       
       console.log(`Follow-up ${taskId} completed by ${user.name}`);
     } catch (error) {
@@ -562,19 +564,21 @@ export function setupActions(app: App) {
       // Notify original assignee
       if (task.assigneeId) {
         const originalAssignee = await storage.getUser(task.assigneeId);
-        if (originalAssignee) {
+        if (originalAssignee && originalAssignee.slackId) {
           await client.chat.postMessage({
             channel: originalAssignee.slackId,
-            text: `📋 <@${user.slackId}> has taken ownership of your overdue follow-up: "${task.title}"`
+            text: `📋 <@${user.slackId || 'someone'}> has taken ownership of your overdue follow-up: "${task.title}"`
           });
         }
       }
-      
+
       // Confirm to new owner
-      await client.chat.postMessage({
-        channel: user.slackId,
-        text: `✅ You've taken ownership of follow-up: "${task.title}"\n\nTask is now assigned to you.`
-      });
+      if (user.slackId) {
+        await client.chat.postMessage({
+          channel: user.slackId,
+          text: `✅ You've taken ownership of follow-up: "${task.title}"\n\nTask is now assigned to you.`
+        });
+      }
       
       console.log(`Follow-up ${taskId} ownership taken by ${user.name}`);
     } catch (error) {
@@ -601,14 +605,16 @@ export function setupActions(app: App) {
       }
       
       const newDueDate = new Date(newDueDateTimestamp * 1000);
-      
+
       // Update task with new due date
       await storage.updateTask(taskId, { dueAt: newDueDate });
-      
-      await client.chat.postMessage({
-        channel: user.slackId,
-        text: `✅ Follow-up deadline extended\n\n*New Due Date:* ${newDueDate.toLocaleString()}\n*Reason:* ${reason}`
-      });
+
+      if (user.slackId) {
+        await client.chat.postMessage({
+          channel: user.slackId,
+          text: `✅ Follow-up deadline extended\n\n*New Due Date:* ${newDueDate.toLocaleString()}\n*Reason:* ${reason}`
+        });
+      }
       
       console.log(`Follow-up ${taskId} deadline extended by ${user.name}`);
     } catch (error) {
@@ -630,12 +636,14 @@ export function setupActions(app: App) {
       const allTasks = await storage.getTasks();
       const criticalIssues = await identifyCriticalIssues(allTasks, new Date());
       const issue = criticalIssues.find(i => i.type === issueType);
-      
+
       if (!issue) {
-        await client.chat.postMessage({
-          channel: user.slackId,
-          text: '❌ Critical issue not found or may have been resolved.'
-        });
+        if (user.slackId) {
+          await client.chat.postMessage({
+            channel: user.slackId,
+            text: '❌ Critical issue not found or may have been resolved.'
+          });
+        }
         return;
       }
       

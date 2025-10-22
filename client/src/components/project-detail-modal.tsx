@@ -141,7 +141,7 @@ export function ProjectDetailModal({ projectId, isOpen, onClose }: ProjectDetail
       form.reset({
         title: project.title,
         scope: project.scope,
-        status: project.status,
+        status: project.status as 'planning' | 'active' | 'on_hold' | 'completed' | 'cancelled',
         startAt: formatDate(project.startAt),
         targetAt: formatDate(project.targetAt),
         ownerId: project.owner?.id || "",
