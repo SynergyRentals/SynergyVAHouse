@@ -99,10 +99,10 @@ app.use((req, res, next) => {
 
 // WebSocket server setup with authentication
 async function setupWebSocketServer(server: any) {
-  const wss = new WebSocketServer({ 
+  const wss = new WebSocketServer({
     server,
     path: '/ws',
-    verifyClient: async (info) => {
+    verifyClient: async (info: { origin: string; secure: boolean; req: any }) => {
       try {
         // Parse session from cookies for authentication
         const cookieHeader = info.req.headers.cookie;

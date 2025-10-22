@@ -619,8 +619,8 @@ async function getThreadContext(channelId: string, threadTs?: string) {
     });
     
     const messages = result.messages || [];
-    const participants = [...new Set(messages.map(m => m.user).filter(Boolean))];
-    
+    const participants = [...new Set(messages.map((m: any) => m.user).filter(Boolean))];
+
     return {
       threadTs,
       messageCount: messages.length,
@@ -717,9 +717,8 @@ export async function createManualFollowUp(data: any) {
     
     const task = await storage.createTask({
       title: data.title || 'Manual Follow-up',
-      description: data.description || '',
       category: 'follow_up',
-      type: 'action_item',
+      type: 'follow_up',
       status: 'OPEN',
       priority: data.priority || 2,
       assigneeId: data.assigneeId || user.id,

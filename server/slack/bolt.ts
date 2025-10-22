@@ -24,7 +24,7 @@ export async function initializeSlackApp(app: Express) {
       {
         path: '/slack/events',
         method: ['POST'],
-        handler: (req: Request, res: Response) => {
+        handler: (req: any, res: any) => {
           // Handle Slack events
           res.writeHead(200);
           res.end('OK');

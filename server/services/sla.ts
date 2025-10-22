@@ -51,8 +51,9 @@ async function escalateSLABreach(task: any, slackApp: any) {
   try {
     const assignee = task.assigneeId ? await storage.getUser(task.assigneeId) : null;
     const playbook = task.playbookKey ? await storage.getPlaybook(task.playbookKey) : null;
-    
-    const escalationChannel = playbook?.content?.sla?.breach_escalate_to || '#triage';
+
+    const playbookContent = playbook?.content as any;
+    const escalationChannel = playbookContent?.sla?.breach_escalate_to || '#triage';
     const breachMinutes = Math.floor((new Date().getTime() - new Date(task.slaAt).getTime()) / (1000 * 60));
     
     const message = {

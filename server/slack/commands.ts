@@ -24,8 +24,9 @@ export function setupCommands(app: App) {
           title: text,
           category: 'manual',
           status: 'OPEN',
+          priority: 3,
           assigneeId: user.id,
-          createdBy: user.slackId,
+          createdBy: user.slackId || undefined,
           sourceKind: 'slack',
           sourceId: command.channel_id,
         });
@@ -434,11 +435,11 @@ ${overdueTasks.length > 0 ? 'ðŸš¨ *Priority: Address overdue tasks first*' : 'âœ
         return;
       }
 
-      await storage.updateTask(taskId, { 
+      await storage.updateTask(taskId, {
         status: 'BLOCKED',
-        evidence: { 
-          ...task.evidence, 
-          blocker: { reason, reportedAt: new Date(), reportedBy: user.slackId } 
+        evidence: {
+          ...(task.evidence as any || {}),
+          blocker: { reason, reportedAt: new Date(), reportedBy: user.slackId }
         }
       });
 
@@ -603,6 +604,7 @@ ${overdueTasks.length > 0 ? 'ðŸš¨ *Priority: Address overdue tasks first*' : 'âœ
             title: `Follow-up: ${promiseText.trim()}`,
             category: 'follow_up',
             status: 'OPEN',
+            priority: 3,
             assigneeId: user.id,
             dueAt: dueDate,
             sourceKind: 'slack',
@@ -614,7 +616,7 @@ ${overdueTasks.length > 0 ? 'ðŸš¨ *Priority: Address overdue tasks first*' : 'âœ
               channelId: command.channel_id,
               participants: [user.slackId]
             },
-            createdBy: user.slackId
+            createdBy: user.slackId || undefined
           });
 
           await respond(`âœ… Follow-up created: *${promiseText.trim()}*\nDue: ${dueDate.toLocaleString()}\nTask ID: ${task.id}`);

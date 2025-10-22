@@ -38,13 +38,13 @@ async function renderVAView(client: any, userId: string, user: any) {
   
   const blockedTasks = tasks.filter(task => task.status === 'BLOCKED');
   
-  const completedToday = tasks.filter(task => 
-    task.status === 'DONE' && 
-    task.updatedAt && 
+  const completedToday = tasks.filter(task =>
+    task.status === 'DONE' &&
+    task.updatedAt &&
     new Date(task.updatedAt).toDateString() === now.toDateString()
   );
 
-  const blocks = [
+  const blocks: any[] = [
     {
       type: 'header',
       text: {
@@ -180,7 +180,7 @@ async function renderManagerView(client: any, userId: string) {
     };
   });
 
-  const blocks = [
+  const blocks: any[] = [
     {
       type: 'header',
       text: {

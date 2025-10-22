@@ -7,45 +7,47 @@ export function setupMessageEvents(app: App) {
   // Listen for messages in all channels
   app.message(async ({ message, client }) => {
     try {
+      const msg = message as any;
+
       // Skip bot messages and messages without text
-      if (message.subtype === 'bot_message' || !message.text || message.bot_id) {
+      if (msg.subtype === 'bot_message' || !msg.text || msg.bot_id) {
         return;
       }
-      
+
       // Skip messages from our own bot using cached bot user ID
       const botUserId = getBotUserId();
-      if (message.user === botUserId || message.bot_id === botUserId) {
+      if (msg.user === botUserId || msg.bot_id === botUserId) {
         return;
       }
-      
+
       // Check if user exists in our system
-      const user = await storage.getUserBySlackId(message.user);
+      const user = await storage.getUserBySlackId(msg.user);
       if (!user) {
-        console.log(`Message from unknown user: ${message.user}`);
+        console.log(`Message from unknown user: ${msg.user}`);
         return;
       }
-      
+
       // Only monitor specific channels or all channels based on configuration
       const monitoredChannels = process.env.MONITORED_CHANNELS?.split(',') || [];
-      const shouldMonitor = monitoredChannels.length === 0 || 
-                           monitoredChannels.includes(message.channel) ||
+      const shouldMonitor = monitoredChannels.length === 0 ||
+                           monitoredChannels.includes(msg.channel) ||
                            monitoredChannels.includes('*'); // * means all channels
-      
+
       if (!shouldMonitor) {
         return;
       }
-      
-      console.log(`[Follow-up] Analyzing message from ${user.name} in channel ${message.channel}`);
-      
+
+      console.log(`[Follow-up] Analyzing message from ${user.name} in channel ${msg.channel}`);
+
       // Attempt to detect and create follow-up
       const followUpTask = await detectAndCreateFollowUp(
-        message, 
-        message.channel, 
-        message.thread_ts
+        msg,
+        msg.channel,
+        msg.thread_ts
       );
-      
+
       if (followUpTask) {
-        console.log(`[Follow-up] Created follow-up task ${followUpTask.id} for message: "${message.text?.substring(0, 50)}..."`);
+        console.log(`[Follow-up] Created follow-up task ${followUpTask.id} for message: "${msg.text?.substring(0, 50)}..."`);
       }
       
     } catch (error) {
@@ -56,13 +58,15 @@ export function setupMessageEvents(app: App) {
   // Listen for messages in threads specifically
   app.message(/.*/, async ({ message, client }) => {
     try {
+      const msg = message as any;
+
       // Only process if this is a threaded message
-      if (!message.thread_ts || message.subtype === 'bot_message' || !message.text) {
+      if (!msg.thread_ts || msg.subtype === 'bot_message' || !msg.text) {
         return;
       }
-      
+
       // Check if this is an update to an existing follow-up
-      await checkForFollowUpUpdates(message, client);
+      await checkForFollowUpUpdates(msg, client);
       
     } catch (error) {
       console.error('Error checking thread for follow-up updates:', error);
