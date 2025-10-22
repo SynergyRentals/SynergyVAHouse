@@ -1,10 +1,12 @@
 import type { Express, Request, Response } from 'express';
-import { App } from '@slack/bolt';
+import SlackBolt from '@slack/bolt';
 import { setupAppHome } from './app_home';
 import { setupCommands } from './commands';
 import { setupActions } from './actions';
 import { setupModals } from './modals';
 import { setupMessageEvents } from './message_events';
+
+const App = (SlackBolt as any).App || SlackBolt;
 
 let slackApp: any;
 let botUserId: string | null = null;
