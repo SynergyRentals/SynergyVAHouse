@@ -11,14 +11,70 @@ import { setupAuth, isAuthenticated } from "./replitAuth";
 import { requireReplitAuth, requireAuth, type AuthenticatedRequest } from "./middleware/auth";
 import { z } from "zod";
 import authRoutes from "./api/auth/routes";
+import { performHealthCheck, performReadinessCheck } from "./health";
 
 export async function registerRoutes(app: Express): Promise<void> {
   // Setup Replit Auth middleware first
   await setupAuth(app);
 
-  // Health check
+  // Health check endpoints (no authentication required for monitoring)
+
+  // Legacy health check endpoint for backward compatibility
   app.get('/healthz', async (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  });
+
+  // Comprehensive health check endpoint
+  // Returns detailed service status information
+  // GET /health - Returns 200 if healthy/degraded, 503 if unhealthy
+  app.get('/health', async (req, res) => {
+    try {
+      const includeDetails = req.query.details === 'true';
+      const healthCheck = await performHealthCheck(includeDetails);
+
+      // Return 503 Service Unavailable if unhealthy, 200 otherwise
+      const statusCode = healthCheck.status === 'unhealthy' ? 503 : 200;
+      res.status(statusCode).json(healthCheck);
+    } catch (error: any) {
+      console.error('Health check failed:', error);
+      res.status(503).json({
+        status: 'unhealthy',
+        timestamp: new Date().toISOString(),
+        version: '1.0.0',
+        uptime: 0,
+        services: {
+          database: 'down',
+          slack: 'down'
+        },
+        error: error.message || 'Health check failed'
+      });
+    }
+  });
+
+  // Kubernetes readiness probe endpoint
+  // More strict than /health - checks if app is ready to receive traffic
+  // GET /ready - Returns 200 when ready, 503 when not ready
+  app.get('/ready', async (req, res) => {
+    try {
+      const readinessCheck = await performReadinessCheck();
+
+      // Return 503 Service Unavailable if not ready, 200 otherwise
+      const statusCode = readinessCheck.status === 'unhealthy' ? 503 : 200;
+      res.status(statusCode).json(readinessCheck);
+    } catch (error: any) {
+      console.error('Readiness check failed:', error);
+      res.status(503).json({
+        status: 'unhealthy',
+        timestamp: new Date().toISOString(),
+        version: '1.0.0',
+        uptime: 0,
+        services: {
+          database: 'down',
+          slack: 'down'
+        },
+        error: error.message || 'Readiness check failed'
+      });
+    }
   });
 
   // Register auth routes (JWT, Slack OAuth, API keys)
