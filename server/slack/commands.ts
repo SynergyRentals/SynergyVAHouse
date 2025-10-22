@@ -1,6 +1,7 @@
 import type { App } from '@slack/bolt';
 import { storage } from '../storage';
 import { startSLATimer } from '../services/sla';
+import { withRateLimit } from './rateLimiter';
 
 export function setupCommands(app: App) {
   // /task command
@@ -34,15 +35,16 @@ export function setupCommands(app: App) {
         await respond(`âœ… Task created: *${task.title}* (ID: ${task.id})`);
       } else {
         // Show task creation modal
-        await client.views.open({
-          trigger_id: command.trigger_id,
-          view: {
-            type: 'modal',
-            callback_id: 'create_task_modal',
-            title: {
-              type: 'plain_text',
-              text: 'Create Task'
-            },
+        await withRateLimit(
+          () => client.views.open({
+            trigger_id: command.trigger_id,
+            view: {
+              type: 'modal',
+              callback_id: 'create_task_modal',
+              title: {
+                type: 'plain_text',
+                text: 'Create Task'
+              },
             blocks: [
               {
                 type: 'input',
@@ -120,7 +122,9 @@ export function setupCommands(app: App) {
               text: 'Create'
             }
           }
-        });
+        }),
+        { methodName: 'views.open' }
+      );
       }
     } catch (error) {
       console.error('Error in /task command:', error);
@@ -162,16 +166,17 @@ export function setupCommands(app: App) {
 
       if (requiresDoD) {
         // Open DoD modal
-        await client.views.open({
-          trigger_id: command.trigger_id,
-          view: {
-            type: 'modal',
-            callback_id: 'complete_task_modal',
-            private_metadata: taskId,
-            title: {
-              type: 'plain_text',
-              text: 'Complete Task'
-            },
+        await withRateLimit(
+          () => client.views.open({
+            trigger_id: command.trigger_id,
+            view: {
+              type: 'modal',
+              callback_id: 'complete_task_modal',
+              private_metadata: taskId,
+              title: {
+                type: 'plain_text',
+                text: 'Complete Task'
+              },
             blocks: [
               {
                 type: 'section',
@@ -187,7 +192,9 @@ export function setupCommands(app: App) {
               text: 'Complete'
             }
           }
-        });
+        }),
+        { methodName: 'views.open' }
+      );
       } else {
         // Simple completion
         await storage.updateTask(taskId, { status: 'DONE' });
@@ -527,15 +534,16 @@ ${overdueTasks.length > 0 ? 'ðŸš¨ *Priority: Address overdue tasks first*' : 'âœ
       
       if (!text) {
         // Show follow-up creation modal
-        await client.views.open({
-          trigger_id: command.trigger_id,
-          view: {
-            type: 'modal',
-            callback_id: 'create_followup_modal',
-            title: {
-              type: 'plain_text',
-              text: 'Create Follow-up'
-            },
+        await withRateLimit(
+          () => client.views.open({
+            trigger_id: command.trigger_id,
+            view: {
+              type: 'modal',
+              callback_id: 'create_followup_modal',
+              title: {
+                type: 'plain_text',
+                text: 'Create Follow-up'
+              },
             blocks: [
               {
                 type: 'input',
@@ -589,7 +597,9 @@ ${overdueTasks.length > 0 ? 'ðŸš¨ *Priority: Address overdue tasks first*' : 'âœ
               text: 'Create Follow-up'
             }
           }
-        });
+        }),
+        { methodName: 'views.open' }
+      );
       } else {
         // Quick follow-up creation with text parsing
         const parts = text.split(' | ');

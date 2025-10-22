@@ -3,6 +3,7 @@ import { storage } from '../storage';
 import { inferAssigneeFromMessage } from '../services/mappers';
 import { startSLATimer } from '../services/sla';
 import { createManualFollowUp } from '../services/followup';
+import { withRateLimit } from './rateLimiter';
 
 // Category to playbook key mapping (shared with mappers)
 function getCategoryPlaybookMapping(): Record<string, string> {
@@ -62,10 +63,13 @@ export function setupModals(app: App) {
       });
 
       // Send confirmation
-      await client.chat.postMessage({
-        channel: body.user.id,
-        text: `✅ Task created: *${task.title}* (ID: ${task.id})`
-      });
+      await withRateLimit(
+        () => client.chat.postMessage({
+          channel: body.user.id,
+          text: `✅ Task created: *${task.title}* (ID: ${task.id})`
+        }),
+        { methodName: 'chat.postMessage' }
+      );
     } catch (error) {
       console.error('Error creating task from modal:', error);
     }
@@ -126,18 +130,24 @@ export function setupModals(app: App) {
 
       // Notify assignee if different from creator
       if (assignee && assignee.id !== creator.id && assignee.slackId) {
-        await client.chat.postMessage({
-          channel: assignee.slackId,
-          text: `📋 New task assigned to you: *${task.title}*\nCreated from: ${metadata.sourceUrl}`
-        });
+        await withRateLimit(
+          () => client.chat.postMessage({
+            channel: assignee.slackId,
+            text: `📋 New task assigned to you: *${task.title}*\nCreated from: ${metadata.sourceUrl}`
+          }),
+          { methodName: 'chat.postMessage' }
+        );
       }
 
       // Confirm to creator
       if (creator.slackId) {
-        await client.chat.postMessage({
-          channel: creator.slackId,
-          text: `✅ Task created from message: *${task.title}*\nAssigned to: ${assignee?.name || 'yourself'}`
-        });
+        await withRateLimit(
+          () => client.chat.postMessage({
+            channel: creator.slackId,
+            text: `✅ Task created from message: *${task.title}*\nAssigned to: ${assignee?.name || 'yourself'}`
+          }),
+          { methodName: 'chat.postMessage' }
+        );
       }
     } catch (error) {
       console.error('Error creating task from message modal:', error);
@@ -179,10 +189,13 @@ export function setupModals(app: App) {
       });
 
       if (user.slackId) {
-        await client.chat.postMessage({
-          channel: user.slackId,
-          text: `✅ Task completed with evidence: *${task.title}*`
-        });
+        await withRateLimit(
+          () => client.chat.postMessage({
+            channel: user.slackId,
+            text: `✅ Task completed with evidence: *${task.title}*`
+          }),
+          { methodName: 'chat.postMessage' }
+        );
       }
     } catch (error) {
       console.error('Error completing task with DoD:', error);
@@ -227,17 +240,23 @@ export function setupModals(app: App) {
       // Notify manager about blocked task
       const managerSlackId = process.env.MANAGER_SLACK_ID;
       if (managerSlackId) {
-        await client.chat.postMessage({
-          channel: managerSlackId,
-          text: `🚫 Task blocked by ${user.name}: *${task.title}*\nReason: ${reason}`
-        });
+        await withRateLimit(
+          () => client.chat.postMessage({
+            channel: managerSlackId,
+            text: `🚫 Task blocked by ${user.name}: *${task.title}*\nReason: ${reason}`
+          }),
+          { methodName: 'chat.postMessage' }
+        );
       }
 
       if (user.slackId) {
-        await client.chat.postMessage({
-          channel: user.slackId,
-          text: `🚫 Task blocked: *${task.title}*`
-        });
+        await withRateLimit(
+          () => client.chat.postMessage({
+            channel: user.slackId,
+            text: `🚫 Task blocked: *${task.title}*`
+          }),
+          { methodName: 'chat.postMessage' }
+        );
       }
     } catch (error) {
       console.error('Error blocking task:', error);
@@ -280,18 +299,24 @@ export function setupModals(app: App) {
 
       // Send confirmation to creator
       if (creator.slackId) {
-        await client.chat.postMessage({
-          channel: creator.slackId,
-          text: `✅ Follow-up created for <@${assigneeSlackId}>\n\n*Promise:* "${promiseText}"\n*Due:* ${dueDate.toLocaleString()}\n*Task ID:* ${task.id}`
-        });
+        await withRateLimit(
+          () => client.chat.postMessage({
+            channel: creator.slackId,
+            text: `✅ Follow-up created for <@${assigneeSlackId}>\n\n*Promise:* "${promiseText}"\n*Due:* ${dueDate.toLocaleString()}\n*Task ID:* ${task.id}`
+          }),
+          { methodName: 'chat.postMessage' }
+        );
       }
 
       // Notify assignee if different from creator
       if (assigneeSlackId && assigneeSlackId !== creator.slackId) {
-        await client.chat.postMessage({
-          channel: assigneeSlackId,
-          text: `📋 Follow-up task assigned to you by <@${creator.slackId || 'someone'}>\n\n*Promise:* "${promiseText}"\n*Due:* ${dueDate.toLocaleString()}\n*Task ID:* ${task.id}`
-        });
+        await withRateLimit(
+          () => client.chat.postMessage({
+            channel: assigneeSlackId,
+            text: `📋 Follow-up task assigned to you by <@${creator.slackId || 'someone'}>\n\n*Promise:* "${promiseText}"\n*Due:* ${dueDate.toLocaleString()}\n*Task ID:* ${task.id}`
+          }),
+          { methodName: 'chat.postMessage' }
+        );
       }
       
       console.log(`Manual follow-up created: ${task.id}`);

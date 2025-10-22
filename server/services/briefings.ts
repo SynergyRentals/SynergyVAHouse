@@ -2,6 +2,7 @@ import { storage } from '../storage';
 import { getSlackApp } from '../slack/bolt';
 import { generateBriefingData } from './metrics';
 import type { User, Task } from '@shared/schema';
+import { withRateLimit } from '../slack/rateLimiter';
 
 export async function sendDailyVABriefings() {
   try {
@@ -71,10 +72,13 @@ async function sendVABrief(user: User, timeOfDay: 'AM' | 'PM') {
     
     const slackApp = getSlackApp();
     if (slackApp) {
-      await slackApp.client.chat.postMessage({
-        channel: user.slackId,
-        blocks: briefContent
-      });
+      await withRateLimit(
+        () => slackApp.client.chat.postMessage({
+          channel: user.slackId,
+          blocks: briefContent
+        }),
+        { methodName: 'chat.postMessage' }
+      );
     }
     
     console.log(`Enhanced ${timeOfDay} brief sent to ${user.name}`);
@@ -444,10 +448,13 @@ export async function sendManagerDigest() {
     
     const slackApp = getSlackApp();
     if (slackApp) {
-      await slackApp.client.chat.postMessage({
-        channel: managerSlackId,
-        blocks: digestContent
-      });
+      await withRateLimit(
+        () => slackApp.client.chat.postMessage({
+          channel: managerSlackId,
+          blocks: digestContent
+        }),
+        { methodName: 'chat.postMessage' }
+      );
     }
     
     console.log('Enhanced manager digest sent');
@@ -816,10 +823,13 @@ export async function sendWeeklyManagerSummary() {
     
     const slackApp = getSlackApp();
     if (slackApp) {
-      await slackApp.client.chat.postMessage({
-        channel: managerSlackId,
-        blocks: summaryContent
-      });
+      await withRateLimit(
+        () => slackApp.client.chat.postMessage({
+          channel: managerSlackId,
+          blocks: summaryContent
+        }),
+        { methodName: 'chat.postMessage' }
+      );
     }
     
     console.log('Weekly manager summary sent');

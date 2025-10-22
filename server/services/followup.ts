@@ -1,5 +1,6 @@
 import { storage } from '../storage';
 import { getSlackApp } from '../slack/bolt';
+import { withRateLimit } from '../slack/rateLimiter';
 
 // Comprehensive promise detection patterns
 const PROMISE_PATTERNS = [
@@ -135,18 +136,24 @@ export async function detectAndCreateFollowUp(message: any, channelId: string, t
     // React to message to indicate follow-up was detected
     const slackApp = getSlackApp();
     if (slackApp) {
-      await slackApp.client.reactions.add({
-        channel: channelId,
-        timestamp: message.ts,
-        name: 'alarm_clock'
-      });
-      
+      await withRateLimit(
+        () => slackApp.client.reactions.add({
+          channel: channelId,
+          timestamp: message.ts,
+          name: 'alarm_clock'
+        }),
+        { methodName: 'reactions.add' }
+      );
+
       // Post thread reply with follow-up details
-      await slackApp.client.chat.postMessage({
-        channel: channelId,
-        thread_ts: message.ts,
-        text: `⏰ Follow-up detected! I'll remind you ${formatDueDate(dueDate)} if no update is provided.\n\n*Promise:* "${promiseText}"\n*Task ID:* ${task.id}`
-      });
+      await withRateLimit(
+        () => slackApp.client.chat.postMessage({
+          channel: channelId,
+          thread_ts: message.ts,
+          text: `⏰ Follow-up detected! I'll remind you ${formatDueDate(dueDate)} if no update is provided.\n\n*Promise:* "${promiseText}"\n*Task ID:* ${task.id}`
+        }),
+        { methodName: 'chat.postMessage' }
+      );
     }
     
     console.log(`Follow-up task created: ${task.id} for promise: "${promiseText}"`);
@@ -241,9 +248,12 @@ async function sendFollowUpReminder(task: any, assignee: any, reminderType: stri
   
   try {
     // Open DM channel first to ensure proper channel ID
-    const dmResult = await slackApp.client.conversations.open({
-      users: assignee.slackId
-    });
+    const dmResult = await withRateLimit(
+      () => slackApp.client.conversations.open({
+        users: assignee.slackId
+      }),
+      { methodName: 'conversations.open' }
+    );
     
     if (!dmResult.ok || !dmResult.channel?.id) {
       console.error(`Failed to open DM channel for user ${assignee.slackId}`);
@@ -299,8 +309,11 @@ async function sendFollowUpReminder(task: any, assignee: any, reminderType: stri
       }
     ]
   };
-  
-    await slackApp.client.chat.postMessage(message);
+
+    await withRateLimit(
+      () => slackApp.client.chat.postMessage(message),
+      { methodName: 'chat.postMessage' }
+    );
     console.log(`${reminderType} reminder sent for follow-up task ${task.id}`);
   } catch (error) {
     console.error(`Failed to send ${reminderType} reminder for task ${task.id}:`, error);
@@ -359,20 +372,29 @@ async function escalateOverdueFollowUp(task: any, assignee: any, slackApp: any) 
       }
     ]
   };
-  
-  await slackApp.client.chat.postMessage(escalationMessage);
-  
+
+  await withRateLimit(
+    () => slackApp.client.chat.postMessage(escalationMessage),
+    { methodName: 'chat.postMessage' }
+  );
+
   // Also notify the assignee via DM
   try {
-    const dmResult = await slackApp.client.conversations.open({
-      users: assignee.slackId
-    });
-    
+    const dmResult = await withRateLimit(
+      () => slackApp.client.conversations.open({
+        users: assignee.slackId
+      }),
+      { methodName: 'conversations.open' }
+    );
+
     if (dmResult.ok && dmResult.channel?.id) {
-      await slackApp.client.chat.postMessage({
-        channel: dmResult.channel.id,
-        text: `🚨 Your follow-up commitment is overdue and has been escalated to the triage team.\n\n*Promise:* "${metadata.promiseText}"\n*Source:* <${task.sourceUrl}|View original message>`
-      });
+      await withRateLimit(
+        () => slackApp.client.chat.postMessage({
+          channel: dmResult.channel.id,
+          text: `🚨 Your follow-up commitment is overdue and has been escalated to the triage team.\n\n*Promise:* "${metadata.promiseText}"\n*Source:* <${task.sourceUrl}|View original message>`
+        }),
+        { methodName: 'chat.postMessage' }
+      );
     }
   } catch (dmError) {
     console.error(`Failed to send DM to assignee ${assignee.slackId} for escalation:`, dmError);
@@ -611,12 +633,15 @@ async function getThreadContext(channelId: string, threadTs?: string) {
   try {
     const slackApp = getSlackApp();
     if (!slackApp) return null;
-    
-    const result = await slackApp.client.conversations.replies({
-      channel: channelId,
-      ts: threadTs,
-      limit: 10
-    });
+
+    const result = await withRateLimit(
+      () => slackApp.client.conversations.replies({
+        channel: channelId,
+        ts: threadTs,
+        limit: 10
+      }),
+      { methodName: 'conversations.replies' }
+    );
     
     const messages = result.messages || [];
     const participants = [...new Set(messages.map((m: any) => m.user).filter(Boolean))];

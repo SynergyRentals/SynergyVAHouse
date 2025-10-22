@@ -2,6 +2,7 @@ import type { App } from '@slack/bolt';
 import { storage } from '../storage';
 import { satisfyFollowUp } from '../services/followup';
 import { identifyCriticalIssues } from '../services/metrics';
+import { withRateLimit } from './rateLimiter';
 
 export function setupActions(app: App) {
   // Complete follow-up action

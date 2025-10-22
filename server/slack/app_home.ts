@@ -1,5 +1,6 @@
 import type { App } from '@slack/bolt';
 import { storage } from '../storage';
+import { withRateLimit } from './rateLimiter';
 
 export function setupAppHome(app: App) {
   app.event('app_home_opened', async ({ event, client }) => {
@@ -149,13 +150,16 @@ async function renderVAView(client: any, userId: string, user: any) {
     });
   });
 
-  await client.views.publish({
-    user_id: userId,
-    view: {
-      type: 'home',
-      blocks
-    }
-  });
+  await withRateLimit(
+    () => client.views.publish({
+      user_id: userId,
+      view: {
+        type: 'home',
+        blocks
+      }
+    }),
+    { methodName: 'views.publish' }
+  );
 }
 
 async function renderManagerView(client: any, userId: string) {
@@ -230,13 +234,16 @@ async function renderManagerView(client: any, userId: string) {
     }
   );
 
-  await client.views.publish({
-    user_id: userId,
-    view: {
-      type: 'home',
-      blocks
-    }
-  });
+  await withRateLimit(
+    () => client.views.publish({
+      user_id: userId,
+      view: {
+        type: 'home',
+        blocks
+      }
+    }),
+    { methodName: 'views.publish' }
+  );
 }
 
 function getStatusEmoji(status: string): string {

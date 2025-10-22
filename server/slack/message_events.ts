@@ -2,6 +2,7 @@ import type { App } from '@slack/bolt';
 import { detectAndCreateFollowUp } from '../services/followup';
 import { storage } from '../storage';
 import { getBotUserId } from './bolt';
+import { withRateLimit } from './rateLimiter';
 
 export function setupMessageEvents(app: App) {
   // Listen for messages in all channels
@@ -150,11 +151,14 @@ async function checkForFollowUpUpdates(message: any, client: any) {
           });
           
           // React to the update message to acknowledge follow-up completion
-          await client.reactions.add({
-            channel: message.channel,
-            timestamp: message.ts,
-            name: 'white_check_mark'
-          });
+          await withRateLimit(
+            () => client.reactions.add({
+              channel: message.channel,
+              timestamp: message.ts,
+              name: 'white_check_mark'
+            }),
+            { methodName: 'reactions.add' }
+          );
           
           console.log(`Follow-up task ${task.id} marked complete by thread update`);
         }
@@ -205,10 +209,13 @@ async function handleFollowUpCompletionReaction(event: any, client: any) {
         });
         
         // Send confirmation DM
-        await client.chat.postMessage({
-          channel: user.slackId,
-          text: `✅ Follow-up marked complete: "${task.title}"\n\nThanks for the update!`
-        });
+        await withRateLimit(
+          () => client.chat.postMessage({
+            channel: user.slackId,
+            text: `✅ Follow-up marked complete: "${task.title}"\n\nThanks for the update!`
+          }),
+          { methodName: 'chat.postMessage' }
+        );
         
         console.log(`Follow-up task ${task.id} marked complete by reaction`);
       }
