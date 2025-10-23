@@ -366,6 +366,17 @@ export const webhookEventsRelations = relations(webhookEvents, ({ one }) => ({
   }),
 }));
 
+export const failedWebhooksRelations = relations(failedWebhooks, ({ one }) => ({
+  replayTask: one(tasks, {
+    fields: [failedWebhooks.replayTaskId],
+    references: [tasks.id],
+  }),
+  replayedByUser: one(users, {
+    fields: [failedWebhooks.replayedBy],
+    references: [users.id],
+  }),
+}));
+
 // Insert schemas with enhanced validation
 export const insertUserSchema = createInsertSchema(users).omit({
   id: true,
@@ -516,9 +527,10 @@ export const insertWebhookEventSchema = createInsertSchema(webhookEvents).omit({
   processedAt: true,
 });
 
-export const insertIdempotencyFailureSchema = createInsertSchema(idempotencyFailures).omit({
+export const insertFailedWebhookSchema = createInsertSchema(failedWebhooks).omit({
   id: true,
   createdAt: true,
+  failedAt: true,
 });
 
 // Types - Using proper Drizzle inference
@@ -566,8 +578,13 @@ export type InsertApiKey = z.infer<typeof insertApiKeySchema>;
 export type WebhookEvent = InferSelectModel<typeof webhookEvents>;
 export type InsertWebhookEvent = z.infer<typeof insertWebhookEventSchema>;
 
+<<<<<<< claude/enhance-webhook-error-handling-011CUMop3prbfomPf19CT1b1
+export type FailedWebhook = InferSelectModel<typeof failedWebhooks>;
+export type InsertFailedWebhook = z.infer<typeof insertFailedWebhookSchema>;
+=======
 export type IdempotencyFailure = InferSelectModel<typeof idempotencyFailures>;
 export type InsertIdempotencyFailure = z.infer<typeof insertIdempotencyFailureSchema>;
+>>>>>>> main
 
 // Permission computation types
 export interface ComputedPermission {
