@@ -1,5 +1,6 @@
 import { storage } from '../storage';
 import type { User, Task } from '@shared/schema';
+import { config } from '../config';
 
 export async function generateDailyMetrics() {
   try {
@@ -398,20 +399,20 @@ export async function identifyCriticalIssues(allTasks: Task[], now: Date) {
 async function identifySuccessStories(allTasks: Task[], startDate: Date, endDate: Date) {
   const stories = [];
   
-  // Fast completions (under 2 hours)
+  // Fast completions (under configured threshold)
   const fastCompletions = allTasks.filter(task => {
     if (task.status !== 'DONE' || !task.createdAt || !task.updatedAt) return false;
     const created = new Date(task.createdAt);
     const completed = new Date(task.updatedAt);
     const cycleHours = (completed.getTime() - created.getTime()) / (1000 * 60 * 60);
-    return created >= startDate && created < endDate && cycleHours < 2;
+    return created >= startDate && created < endDate && cycleHours < config.metrics.fastCompletionThresholdHours;
   });
-  
+
   if (fastCompletions.length > 0) {
     stories.push({
       type: 'fast_completion',
       count: fastCompletions.length,
-      description: `${fastCompletions.length} tasks completed in under 2 hours`,
+      description: `${fastCompletions.length} tasks completed in under ${config.metrics.fastCompletionThresholdHours} hours`,
       tasks: fastCompletions.slice(0, 3)
     });
   }

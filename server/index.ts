@@ -8,14 +8,15 @@ import { startScheduler } from './jobs/scheduler';
 import { log, setupVite, serveStatic } from './vite';
 import { storage } from './storage';
 import { validateEnvironmentOrThrow } from './envValidator';
+import { config, logConfig } from './config';
 
 const app = express();
 
 // Register middleware in the correct order
 // Raw body parsing ONLY for webhooks, JSON parsing for everything else
-app.use('/webhooks', bodyParser.raw({ 
+app.use('/webhooks', bodyParser.raw({
   type: 'application/json',
-  limit: '10mb'
+  limit: config.limits.webhookBodySizeLimit
 }));
 
 // JSON and URL-encoded parsing for non-webhook AND non-Slack routes
@@ -81,7 +82,7 @@ app.use((req, res, next) => {
   
   // Strict Transport Security (HTTPS only)
   if (req.secure || req.headers['x-forwarded-proto'] === 'https') {
-    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
+    res.setHeader('Strict-Transport-Security', `max-age=${config.auth.hstsMaxAgeSec}; includeSubDomains; preload`);
   }
   
   next();
@@ -189,11 +190,11 @@ async function setupWebSocketServer(server: any) {
         clients.delete(ws);
         return ws.terminate();
       }
-      
+
       ws.isAlive = false;
       ws.ping();
     });
-  }, 30000); // Check every 30 seconds
+  }, config.websocket.heartbeatIntervalMs);
 
   // Clean up on server close
   wss.on('close', () => {
@@ -277,6 +278,9 @@ async function start() {
 
     // Validate environment variables first - will throw and stop server if invalid
     validateEnvironmentOrThrow();
+
+    // Log configuration at startup
+    logConfig();
 
     // Initialize Slack app
     await initializeSlackApp(app);

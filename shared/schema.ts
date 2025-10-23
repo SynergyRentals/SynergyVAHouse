@@ -238,35 +238,21 @@ export const webhookEvents = pgTable("webhook_events", {
   sql`CONSTRAINT webhook_events_event_id_source_unique UNIQUE (event_id, source)`
 ]);
 
-// Failed Webhooks table for debugging and replay
-export const failedWebhooks = pgTable("failed_webhooks", {
+// Idempotency Failures table for monitoring
+export const idempotencyFailures = pgTable("idempotency_failures", {
   id: uuid("id").primaryKey().defaultRandom(),
   eventId: text("event_id").notNull(),
   source: text("source").notNull(), // 'conduit' | 'suiteop' | 'wheelhouse'
-  webhookType: text("webhook_type"), // 'escalation.created', 'task.updated', etc.
-  errorType: text("error_type").notNull(), // 'WebhookValidationError', 'WebhookProcessingError', etc.
-  errorMessage: text("error_message").notNull(),
-  statusCode: integer("status_code").notNull(),
-  correlationId: text("correlation_id").notNull(),
-  retryable: boolean("retryable").notNull().default(false),
-  retryCount: integer("retry_count").notNull().default(0),
-  lastRetryAt: timestamp("last_retry_at", { withTimezone: true }),
-  requestHeaders: jsonb("request_headers"),
-  requestBody: jsonb("request_body"),
-  errorContext: jsonb("error_context"), // Full error context from WebhookError
+  failureReason: text("failure_reason").notNull(), // 'database_error', 'timeout', 'unknown'
+  errorMessage: text("error_message"),
   errorStack: text("error_stack"),
-  replayedAt: timestamp("replayed_at", { withTimezone: true }),
-  replayedBy: varchar("replayed_by"),
-  replaySuccess: boolean("replay_success"),
-  replayTaskId: varchar("replay_task_id").references(() => tasks.id),
-  failedAt: timestamp("failed_at", { withTimezone: true }).notNull().defaultNow(),
+  requestBody: jsonb("request_body"),
+  recoveryAction: text("recovery_action").notNull().default('fail_open'), // 'fail_open', 'retry', 'blocked'
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
 }, (table) => [
-  index("failed_webhooks_source_idx").on(table.source),
-  index("failed_webhooks_event_id_idx").on(table.eventId),
-  index("failed_webhooks_correlation_id_idx").on(table.correlationId),
-  index("failed_webhooks_failed_at_idx").on(table.failedAt),
-  index("failed_webhooks_retryable_idx").on(table.retryable)
+  index("idempotency_failures_source_idx").on(table.source),
+  index("idempotency_failures_created_at_idx").on(table.createdAt),
+  index("idempotency_failures_failure_reason_idx").on(table.failureReason)
 ]);
 
 // Relations
@@ -592,8 +578,13 @@ export type InsertApiKey = z.infer<typeof insertApiKeySchema>;
 export type WebhookEvent = InferSelectModel<typeof webhookEvents>;
 export type InsertWebhookEvent = z.infer<typeof insertWebhookEventSchema>;
 
+<<<<<<< claude/enhance-webhook-error-handling-011CUMop3prbfomPf19CT1b1
 export type FailedWebhook = InferSelectModel<typeof failedWebhooks>;
 export type InsertFailedWebhook = z.infer<typeof insertFailedWebhookSchema>;
+=======
+export type IdempotencyFailure = InferSelectModel<typeof idempotencyFailures>;
+export type InsertIdempotencyFailure = z.infer<typeof insertIdempotencyFailureSchema>;
+>>>>>>> main
 
 // Permission computation types
 export interface ComputedPermission {

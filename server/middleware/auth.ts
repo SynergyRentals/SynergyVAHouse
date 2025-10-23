@@ -2,6 +2,7 @@ import type { Request, Response, NextFunction } from 'express';
 import { storage } from '../storage';
 import type { User as AppUser } from '@shared/schema';
 import { verifyAccessToken, verifyApiKey } from '../services/auth.service';
+import { config } from '../config';
 
 // Re-export for backward compatibility
 export type AuthenticatedRequest = Request;
@@ -287,10 +288,10 @@ export function validateSlackSignature(req: Request, res: Response, next: NextFu
       return;
     }
     
-    // Check timestamp to prevent replay attacks (within 5 minutes)
+    // Check timestamp to prevent replay attacks
     const now = Math.floor(Date.now() / 1000);
     const requestTime = parseInt(timestamp);
-    if (Math.abs(now - requestTime) > 300) {
+    if (Math.abs(now - requestTime) > config.auth.slackReplayAttackTimeoutSec) {
       console.error('[Security] Slack request timestamp too old', {
         now,
         requestTime,

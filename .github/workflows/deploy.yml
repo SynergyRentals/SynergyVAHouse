@@ -1,0 +1,175 @@
+name: Deploy
+
+on:
+  push:
+    branches: [ develop ]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+
+jobs:
+  test:
+    name: Run Tests Before Deploy
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: synergy_va_ops_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
+        run: npm ci
+
+      - name: Run linting
+        run: npm run lint
+
+      - name: Run type checking
+        run: npm run check
+
+      - name: Run tests
+        env:
+          TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/synergy_va_ops_test
+          NODE_ENV: test
+          SLACK_BOT_TOKEN: xoxb-test-token
+          SLACK_SIGNING_SECRET: test-signing-secret
+          SLACK_APP_LEVEL_TOKEN: xapp-test-token
+          WEBHOOK_CONDUIT_SECRET: test-secret
+          WEBHOOK_SUITEOP_SECRET: test-secret
+        run: npm test
+
+      - name: Build application
+        run: npm run build
+
+      - name: Archive build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          retention-days: 1
+
+  deploy-staging:
+    name: Deploy to Staging
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/develop' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging')
+    environment:
+      name: staging
+      url: ${{ vars.STAGING_URL }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Deploy to staging
+        run: |
+          echo "Deploying to staging environment..."
+          echo "Deployment URL: ${{ vars.STAGING_URL }}"
+          # Add your deployment commands here
+          # Example for Replit:
+          # curl -X POST "${{ secrets.REPLIT_DEPLOY_WEBHOOK_STAGING }}"
+
+      - name: Run smoke tests
+        run: |
+          echo "Running smoke tests..."
+          sleep 10
+          # Add smoke test commands here
+          # curl -f "${{ vars.STAGING_URL }}/health" || exit 1
+
+      - name: Notify deployment success
+        if: success()
+        run: |
+          echo "Staging deployment successful!"
+
+      - name: Notify deployment failure
+        if: failure()
+        run: |
+          echo "Staging deployment failed!"
+
+  deploy-production:
+    name: Deploy to Production
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production'
+    environment:
+      name: production
+      url: ${{ vars.PRODUCTION_URL }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Deploy to production
+        run: |
+          echo "Deploying to production environment..."
+          echo "Deployment URL: ${{ vars.PRODUCTION_URL }}"
+          # Add your deployment commands here
+          # Example for Replit:
+          # curl -X POST "${{ secrets.REPLIT_DEPLOY_WEBHOOK_PRODUCTION }}"
+
+      - name: Run smoke tests
+        run: |
+          echo "Running smoke tests..."
+          sleep 10
+          # Add smoke test commands here
+          # curl -f "${{ vars.PRODUCTION_URL }}/health" || exit 1
+
+      - name: Create deployment tag
+        if: success()
+        run: |
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          TAG_NAME="deploy-$(date +%Y%m%d-%H%M%S)"
+          git tag -a "$TAG_NAME" -m "Production deployment $TAG_NAME"
+          git push origin "$TAG_NAME"
+
+      - name: Notify deployment success
+        if: success()
+        run: |
+          echo "Production deployment successful!"
+          # Add Slack notification here if needed
+
+      - name: Notify deployment failure
+        if: failure()
+        run: |
+          echo "Production deployment failed!"
+          # Add Slack notification here if needed

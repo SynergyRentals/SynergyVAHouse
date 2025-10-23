@@ -246,6 +246,340 @@ Set up alerts for:
 3. **Zero webhooks for extended period**: No webhooks for > 4 hours
    - May indicate connectivity issue or sender downtime
 
+## Monitoring Idempotency Failures
+
+### Overview
+
+The idempotency middleware is designed to "fail open" - if the idempotency check fails due to database issues or other errors, the webhook is still processed to prevent blocking legitimate events. However, this means we need robust monitoring to detect when idempotency checks are failing.
+
+### What is an Idempotency Failure?
+
+An idempotency failure occurs when the system cannot verify whether a webhook has been processed before due to:
+- Database connection errors
+- Query timeouts
+- Database server issues
+- Network connectivity problems
+- Other unexpected errors
+
+When this happens:
+1. The error is logged at ERROR level
+2. The failure is recorded in the `idempotency_failures` table
+3. A failure counter is incremented
+4. The webhook is processed anyway (fail-open behavior)
+
+### Failure Tracking
+
+All idempotency failures are stored in the `idempotency_failures` table:
+
+```sql
+CREATE TABLE idempotency_failures (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  event_id TEXT NOT NULL,
+  source TEXT NOT NULL,
+  failure_reason TEXT NOT NULL,
+  error_message TEXT,
+  error_stack TEXT,
+  request_body JSONB,
+  recovery_action TEXT NOT NULL DEFAULT 'fail_open',
+  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idempotency_failures_source_idx ON idempotency_failures(source);
+CREATE INDEX idempotency_failures_created_at_idx ON idempotency_failures(created_at);
+CREATE INDEX idempotency_failures_failure_reason_idx ON idempotency_failures(failure_reason);
+```
+
+### Failure Categories
+
+Failures are categorized into the following types:
+
+- **`database_error`**: General database errors
+- **`timeout`**: Query or connection timeouts
+- **`connection_error`**: Database connection failures
+- **`query_error`**: SQL query errors
+- **`unknown`**: Unclassified errors
+
+### Health Check Integration
+
+The `/healthz` endpoint includes idempotency failure metrics:
+
+```bash
+curl http://localhost:5000/healthz
+```
+
+Response:
+```json
+{
+  "status": "ok",
+  "timestamp": "2025-01-22T10:30:00.000Z",
+  "idempotency": {
+    "status": "healthy",
+    "failureRate": {
+      "lastHour": 0,
+      "last24Hours": 2
+    },
+    "threshold": 5
+  }
+}
+```
+
+Health status values:
+- **`healthy`**: Failure rate < threshold (default: 5 failures/hour)
+- **`degraded`**: Failure rate >= threshold but < 2x threshold
+- **`critical`**: Failure rate >= 2x threshold
+
+### Monitoring API
+
+View detailed idempotency failure metrics (requires system audit permissions):
+
+```bash
+curl -H "Authorization: Bearer <token>" \
+  http://localhost:5000/api/monitoring/idempotency?hours=24
+```
+
+Response:
+```json
+{
+  "health": {
+    "healthy": true,
+    "failureRate": 2,
+    "threshold": 5,
+    "status": "healthy"
+  },
+  "stats": {
+    "total": 2,
+    "bySource": {
+      "conduit": 1,
+      "suiteop": 1
+    },
+    "byReason": {
+      "timeout": 1,
+      "connection_error": 1
+    },
+    "recentFailures": [
+      {
+        "id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+        "eventId": "evt_123456",
+        "source": "conduit",
+        "failureReason": "timeout",
+        "errorMessage": "Query timeout after 5000ms",
+        "recoveryAction": "fail_open",
+        "createdAt": "2025-01-22T09:15:00.000Z"
+      }
+    ]
+  },
+  "counter": {
+    "breakdown": {
+      "conduit:timeout": 1,
+      "suiteop:connection_error": 1
+    },
+    "lastReset": "2025-01-22T00:00:00.000Z"
+  },
+  "period": {
+    "hoursBack": 24,
+    "since": "2025-01-21T10:30:00.000Z"
+  }
+}
+```
+
+### Query Failure Statistics
+
+Find recent failures:
+
+```sql
+SELECT
+  source,
+  failure_reason,
+  COUNT(*) as failure_count,
+  MAX(created_at) as last_failure
+FROM idempotency_failures
+WHERE created_at > NOW() - INTERVAL '24 hours'
+GROUP BY source, failure_reason
+ORDER BY failure_count DESC;
+```
+
+Find failures for specific event:
+
+```sql
+SELECT *
+FROM idempotency_failures
+WHERE event_id = 'evt_123456'
+ORDER BY created_at DESC;
+```
+
+### Alert Thresholds
+
+Set up monitoring alerts for the following conditions:
+
+#### 1. High Failure Rate (CRITICAL)
+**Threshold**: More than 5 failures per hour
+**Meaning**: Database or infrastructure issues affecting idempotency checks
+**Action**:
+- Check database health and connectivity
+- Review database logs for errors
+- Check connection pool status
+- Verify network connectivity to database
+
+#### 2. Repeated Failures for Same Event (WARNING)
+**Threshold**: Same event_id failing multiple times
+**Meaning**: Persistent issue with specific webhook or data
+**Action**:
+- Review the specific event's error details
+- Check if webhook payload is malformed
+- Verify event_id format
+
+#### 3. Spike in Specific Failure Type (WARNING)
+**Threshold**: >80% of failures are the same reason
+**Meaning**: Specific infrastructure issue
+**Action**:
+- **`timeout`**: Check database query performance, consider increasing timeout
+- **`connection_error`**: Check database connectivity and connection pool
+- **`query_error`**: Review database schema and query syntax
+- **`database_error`**: Check database health and logs
+
+#### 4. Critical Status in Health Check (CRITICAL)
+**Threshold**: `/healthz` returns `status: "critical"`
+**Meaning**: Failure rate >= 10 failures/hour
+**Action**:
+- Immediate investigation required
+- Check database status
+- Review recent deployments
+- Consider temporary fail-closed if duplicates are being created
+
+### Investigating Failures
+
+When idempotency failures are detected:
+
+1. **Check the health endpoint**:
+   ```bash
+   curl http://localhost:5000/healthz | jq .idempotency
+   ```
+
+2. **Review recent failures**:
+   ```bash
+   curl -H "Authorization: Bearer <token>" \
+     http://localhost:5000/api/monitoring/idempotency | jq .stats.recentFailures
+   ```
+
+3. **Check database connectivity**:
+   ```bash
+   psql $DATABASE_URL -c "SELECT 1;"
+   ```
+
+4. **Review application logs**:
+   ```bash
+   grep "Idempotency Error" logs/app.log | tail -20
+   ```
+
+5. **Check for duplicates created**:
+   ```sql
+   -- Find potential duplicates (same event_id processed multiple times)
+   SELECT event_id, source, COUNT(*) as process_count
+   FROM webhook_events
+   WHERE created_at > NOW() - INTERVAL '1 hour'
+   GROUP BY event_id, source
+   HAVING COUNT(*) > 1;
+   ```
+
+### Runbook: Responding to Idempotency Failures
+
+#### Scenario 1: Intermittent Failures (<5/hour)
+**Severity**: LOW
+**Action**: Monitor only
+- Log review during next on-call check
+- No immediate action required
+
+#### Scenario 2: Sustained Failures (5-10/hour)
+**Severity**: MEDIUM
+**Actions**:
+1. Check database health and connection pool
+2. Review database query performance
+3. Check for infrastructure changes or deployments
+4. Monitor for duplicate task creation
+5. Escalate if rate increases
+
+#### Scenario 3: Critical Failure Rate (>10/hour)
+**Severity**: HIGH
+**Actions**:
+1. **Immediate**: Check database status
+   ```bash
+   psql $DATABASE_URL -c "SELECT version(); SELECT NOW();"
+   ```
+
+2. **Immediate**: Check for duplicate tasks created
+   ```sql
+   SELECT event_id, source, COUNT(*) as count
+   FROM webhook_events
+   WHERE created_at > NOW() - INTERVAL '1 hour'
+   GROUP BY event_id, source
+   HAVING COUNT(*) > 1;
+   ```
+
+3. **If duplicates found**: Consider temporary fail-closed mode (block webhooks on failure)
+
+4. **Diagnose root cause**:
+   - Database performance issues?
+   - Network connectivity problems?
+   - Database connection pool exhaustion?
+   - Recent deployment or configuration change?
+
+5. **Mitigate**:
+   - Scale database if performance issue
+   - Increase connection pool if exhaustion
+   - Rollback if recent deployment caused issue
+
+6. **Communicate**: Update status page and notify stakeholders
+
+#### Scenario 4: Database Completely Unavailable
+**Severity**: CRITICAL
+**Actions**:
+1. **Immediate**: All idempotency checks will fail
+2. **Risk**: High potential for duplicate task creation
+3. **Monitor**: Watch for duplicate tasks being created
+4. **Communicate**: Notify stakeholders of potential duplicates
+5. **Post-recovery**: Run deduplication query to identify and merge duplicates
+
+### Cleanup and Maintenance
+
+Old failure records should be cleaned up periodically:
+
+```sql
+-- Delete failure records older than 30 days
+DELETE FROM idempotency_failures
+WHERE created_at < NOW() - INTERVAL '30 days';
+```
+
+Add to daily maintenance cron job:
+```typescript
+import { cleanupOldFailures } from './services/idempotencyMonitoring';
+
+// Run daily at 2 AM
+schedule.scheduleJob('0 2 * * *', async () => {
+  await cleanupOldFailures(30); // Keep 30 days of history
+});
+```
+
+### Preventing Idempotency Failures
+
+Best practices to minimize idempotency check failures:
+
+1. **Database Connection Pooling**: Use appropriate pool size (recommend: 20-50 connections)
+2. **Query Timeout**: Set reasonable timeout (recommend: 5000ms)
+3. **Connection Retry**: Implement connection retry logic with exponential backoff
+4. **Database Monitoring**: Monitor database health proactively
+5. **Graceful Degradation**: Ensure fail-open behavior is maintained
+6. **Regular Testing**: Test idempotency under database stress conditions
+
+### Metrics to Track
+
+Key metrics for long-term monitoring:
+
+1. **Failure Rate**: Failures per hour/day/week
+2. **Failure Distribution**: By source and by reason
+3. **Mean Time Between Failures (MTBF)**: Average time between failures
+4. **Recovery Success Rate**: % of webhooks successfully processed despite failures
+5. **Duplicate Creation Rate**: % of webhooks that created duplicates during failures
+
 ## Implementation Details
 
 ### Fail-Open Strategy
@@ -509,6 +843,15 @@ For questions or issues with webhook idempotency:
 4. **Contact team**: Reach out to platform engineering team
 
 ## Changelog
+
+### 2025-01-22 - Idempotency Failure Monitoring
+- Added `idempotency_failures` table for failure tracking
+- Implemented failure monitoring service with in-memory counters
+- Enhanced idempotency middleware with detailed error logging
+- Updated `/healthz` endpoint to include idempotency health metrics
+- Added `/api/monitoring/idempotency` endpoint for detailed failure stats
+- Added comprehensive failure monitoring documentation
+- Defined alert thresholds and runbook for investigating failures
 
 ### 2025-01-22 - Initial Implementation
 - Added `webhook_events` table with unique constraint

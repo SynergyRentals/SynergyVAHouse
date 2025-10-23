@@ -1,6 +1,7 @@
 import type { App } from '@slack/bolt';
 import { storage } from '../storage';
 import { startSLATimer } from '../services/sla';
+import { config } from '../config';
 
 export function setupCommands(app: App) {
   // /task command
@@ -576,7 +577,7 @@ ${overdueTasks.length > 0 ? 'ðŸš¨ *Priority: Address overdue tasks first*' : 'âœ
                 element: {
                   type: 'datetimepicker',
                   action_id: 'due_date_picker',
-                  initial_date_time: Math.floor((Date.now() + 4 * 60 * 60 * 1000) / 1000)
+                  initial_date_time: Math.floor((Date.now() + config.followup.defaultHours * 60 * 60 * 1000) / 1000)
                 },
                 label: {
                   type: 'plain_text',
@@ -681,7 +682,7 @@ function parseQuickTime(timeText: string): Date {
   }
   
   if (text.includes('today') || text.includes('later')) {
-    return new Date(now.getTime() + 4 * 60 * 60 * 1000); // 4 hours from now
+    return new Date(now.getTime() + config.followup.defaultHours * 60 * 60 * 1000);
   }
   
   if (text.includes('hour')) {
@@ -696,6 +697,6 @@ function parseQuickTime(timeText: string): Date {
     return nextWeek;
   }
   
-  // Default: 4 hours from now
-  return new Date(now.getTime() + 4 * 60 * 60 * 1000);
+  // Default: configured hours from now
+  return new Date(now.getTime() + config.followup.defaultHours * 60 * 60 * 1000);
 }

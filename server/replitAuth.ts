@@ -11,6 +11,7 @@ import memoize from "memoizee";
 import connectPg from "connect-pg-simple";
 import { storage } from "./storage";
 import { getRequiredEnv } from "./envValidator";
+import { config } from "./config";
 
 const REPLIT_DOMAINS = getRequiredEnv(
   'REPLIT_DOMAINS',
@@ -34,11 +35,11 @@ const getOidcConfig = memoize(
       REPL_ID
     );
   },
-  { maxAge: 3600 * 1000 }
+  { maxAge: config.auth.oidcConfigCacheTtlMs }
 );
 
 export function getSession() {
-  const sessionTtl = 7 * 24 * 60 * 60 * 1000; // 1 week
+  const sessionTtl = config.auth.sessionTtlMs;
   const pgStore = connectPg(session);
 
   // Get DATABASE_URL (already validated in db.ts, but we need it here too)
